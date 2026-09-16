@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Morse</title>
+<style>
+:root { color-scheme: dark; }
+html, body { height: 100%; margin: 0; }
+body {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.5rem;
+  background: #111; color: #ddd; font-family: system-ui, sans-serif; transition: background .05s;
+}
+#nick { font-size: 1.1rem; opacity: .8; }
+#status { min-height: 1.4em; }
+#vib { font-size: .9rem; opacity: .8; }
+#vib[hidden] { display: none; }
+#key {
+  width: min(60vw, 60vh); aspect-ratio: 1; border-radius: 50%; border: none;
+  background: #333; color: #ccc; font-size: 1.5rem; letter-spacing: .2em; cursor: pointer;
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  transition: background .05s;
+}
+body.tx #key { background: #e8b23a; color: #111; }
+body.rx { background: #23305a; }
+</style>
+</head>
+<body>
+<div id="nick"></div>
+<div id="status">connecting…</div>
+<button id="key" aria-label="Morse key">KEY</button>
+<label id="vib" hidden><input type="checkbox"> vibrate on incoming</label>
+<script>
+'use strict';
+const RECONNECT_MS = 2000, TONE_LOCAL_HZ = 600, TONE_REMOTE_HZ = 700, RAMP_S = 0.005;
+// The Vibration API only takes durations, so "hold" is a long buzz cancelled on key up.
+const VIBRATE_MAX_MS = 5000;
+const OP = { KEY_UP: 0x00, KEY_DOWN: 0x01, WAITING: 0x10, PAIRED: 0x11 };
+
+const $nick = document.getElementById('nick');
+const $status = document.getElementById('status');
+const $key = document.getElementById('key');
+const $vib = document.querySelector('#vib input');
+if (navigator.vibrate) $vib.parentElement.hidden = false;
+$vib.addEventListener('change', () => { if (!$vib.checked) navigator.vibrate(0); });
+
+// Two always-running oscillators gated by gain, so on/off is click-free.
+// The remote pitch differs so you can tell who is keying.
+const ac = new AudioContext();
+function tone(hz) {
+  const osc = new OscillatorNode(ac, { frequency: hz });
+  const gain = new GainNode(ac, { gain: 0 });
+  osc.connect(gain).connect(ac.destination);
+  osc.start();
+  return on => gain.gain.setTargetAtTime(on ? 1 : 0, ac.currentTime, RAMP_S);
+}
+const localTone = tone(TONE_LOCAL_HZ), remoteTone = tone(TONE_REMOTE_HZ);
+
+let ws, state = 'connecting…', down = false;
+
+function render() {
+  $status.textContent = state + (ac.state === 'running' ? '' : ' · tap the key to enable audio');
+}
+ac.onstatechange = render;
+
+function rx(on) {
+  remoteTone(on);
+  if ($vib.checked) navigator.vibrate(on ? VIBRATE_MAX_MS : 0);
+  document.body.classList.toggle('rx', on);
+}
+
+// Only transitions are sent, which guards multi-touch and the keyboard path.
+function setKey(isDown) {
+  if (isDown === down) return;
+  down = isDown;
+  document.body.classList.toggle('tx', down);
+  localTone(down);
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(new Uint8Array([down ? OP.KEY_DOWN : OP.KEY_UP]));
+}
+
+$key.addEventListener('pointerdown', e => { $key.setPointerCapture(e.pointerId); ac.resume(); setKey(true); });
+$key.addEventListener('pointerup', () => setKey(false));
+$key.addEventListener('pointercancel', () => setKey(false));
+$key.addEventListener('contextmenu', e => e.preventDefault());
+window.addEventListener('keydown', e => {
+  if (e.code !== 'Space' || e.repeat) return;
+  e.preventDefault();
+  ac.resume();
+  setKey(true);
+});
+window.addEventListener('keyup', e => { if (e.code === 'Space') setKey(false); });
+// A held key while alt-tabbing would otherwise leave the partner's tone on.
+window.addEventListener('blur', () => setKey(false));
+document.addEventListener('visibilitychange', () => { if (document.hidden) setKey(false); });
+
+async function getNick() {
+  let nick = sessionStorage.getItem('nick');
+  if (!nick) {
+    const r = await fetch('/api/register', { method: 'POST' });
+    nick = (await r.json()).nick;
+    sessionStorage.setItem('nick', nick);
+  }
+  return nick;
+}
+
+function connect(nick) {
+  const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${scheme}://${location.host}/ws?nick=${nick}`);
+  ws.binaryType = 'arraybuffer';
+  ws.onmessage = e => {
+    const b = new Uint8Array(e.data);
+    switch (b[0]) {
+      case OP.KEY_DOWN: rx(true); return;
+      case OP.KEY_UP: rx(false); return;
+      case OP.WAITING: rx(false); state = 'waiting for a partner…'; break;
+      case OP.PAIRED: state = 'connected to ' + new TextDecoder().decode(b.subarray(1)); break;
+    }
+    render();
+  };
+  ws.onclose = () => {
+    rx(false);
+    setKey(false);
+    state = 'disconnected, retrying…';
+    render();
+    setTimeout(() => connect(nick), RECONNECT_MS);
+  };
+}
+
+getNick().then(nick => {
+  $nick.textContent = nick;
+  connect(nick);
+  render();
+});
+</script>
+</body>
+</html>
