@@ -15,6 +15,8 @@ body {
 #nick .name { color: var(--accent); font-weight: 600; }
 #nick .tag { opacity: .5; font-size: .9em; }
 #status { min-height: 1.4em; }
+footer { position: fixed; bottom: .8rem; font-size: .8rem; opacity: .5; }
+footer a { color: inherit; }
 #key {
   width: min(60vw, 60vh); aspect-ratio: 1; border-radius: 50%; border: none;
   background: #333; color: #ccc; font-size: 1.5rem; letter-spacing: .2em; cursor: pointer;
@@ -64,6 +66,7 @@ body.rx { background: #23305a; }
 <div id="nick"><span class="name"></span> <span class="tag"></span></div>
 <div id="status">connecting…</div>
 <button id="key" aria-label="Morse key">KEY</button>
+<footer>v{{VERSION}} · <a href="https://github.com/hwhang0917/morse-web">GitHub</a></footer>
 <script>
 'use strict';
 const RECONNECT_MS = 2000, TONE_LOCAL_HZ = 600, TONE_REMOTE_HZ = 700, RAMP_S = 0.005;

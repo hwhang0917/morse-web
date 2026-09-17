@@ -1,13 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"log"
 	"math/rand/v2"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 
@@ -16,8 +19,17 @@ import (
 
 const defaultAddr = ":8080"
 
+// Embedded at build time; no ldflags to remember across Docker and cross builds.
+//
+//go:embed VERSION
+var rawVersion string
+var version = strings.TrimSpace(rawVersion)
+
 //go:embed web/index.html
-var indexHTML []byte
+var rawIndexHTML []byte
+
+// The page is static, so the version is stamped in once at startup.
+var indexHTML = bytes.ReplaceAll(rawIndexHTML, []byte("{{VERSION}}"), []byte(version))
 
 //go:embed web/404.html
 var notFoundHTML []byte
@@ -72,6 +84,10 @@ func newMux(h *hub) http.Handler {
 	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]int32{"waiting": h.nWaiting.Load(), "paired": h.nPaired.Load()})
 	})
+	mux.HandleFunc("GET /version", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		fmt.Fprintln(w, version)
+	})
 	mux.HandleFunc("GET /ws", func(w http.ResponseWriter, r *http.Request) { serveWS(h, w, r) })
 	return mux
 }
@@ -103,7 +119,13 @@ func serveWS(h *hub, w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	addr := flag.String("addr", defaultAddr, "listen address")
+	showVersion := flag.Bool("version", false, "print version and exit")
+	flag.BoolVar(showVersion, "v", false, "print version and exit")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println(version)
+		os.Exit(0)
+	}
 
 	h := newHub()
 	go h.run()

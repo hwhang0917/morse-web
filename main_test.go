@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +14,12 @@ func TestNewNickMatchesPattern(t *testing.T) {
 		if n := newNick(); !nickRE.MatchString(n) {
 			t.Fatalf("nick %q does not match %s", n, nickRE)
 		}
+	}
+}
+
+func TestVersionIsTrimmed(t *testing.T) {
+	if version == "" || strings.TrimSpace(version) != version {
+		t.Fatalf("version %q should be non-empty with no surrounding whitespace", version)
 	}
 }
 
@@ -29,11 +36,19 @@ func TestRoutes(t *testing.T) {
 		return r
 	}
 
-	if r := get("/"); r.StatusCode != 200 || !strings.HasPrefix(r.Header.Get("Content-Type"), "text/html") {
-		t.Fatalf("GET /: status=%d type=%q", r.StatusCode, r.Header.Get("Content-Type"))
+	r := get("/")
+	body, _ := io.ReadAll(r.Body)
+	if r.StatusCode != 200 || !strings.HasPrefix(r.Header.Get("Content-Type"), "text/html") || !strings.Contains(string(body), "v"+version) {
+		t.Fatalf("GET /: status=%d type=%q version stamped=%v", r.StatusCode, r.Header.Get("Content-Type"), strings.Contains(string(body), version))
 	}
 
-	r := get("/nope")
+	r = get("/version")
+	body, _ = io.ReadAll(r.Body)
+	if r.StatusCode != 200 || string(body) != version+"\n" {
+		t.Fatalf("GET /version: status=%d body=%q", r.StatusCode, body)
+	}
+
+	r = get("/nope")
 	if r.StatusCode != 404 || !strings.HasPrefix(r.Header.Get("Content-Type"), "text/html") {
 		t.Fatalf("GET /nope: status=%d type=%q", r.StatusCode, r.Header.Get("Content-Type"))
 	}
