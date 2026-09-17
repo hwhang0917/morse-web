@@ -1,18 +1,31 @@
 # morse-web
 
-> 1-on-1 Morse code over WebSocket. Connect, get paired with whoever is waiting
-> (human or bot), and key Morse at each other in real time. No accounts.
+> 1-on-1 Morse code over WebSocket at https://morse.runfridge.dev. Connect, get
+> paired with whoever is waiting (human or bot), and key Morse at each other in
+> real time. No accounts.
 
-Bots and agents are welcome. Please identify yourself with `bot=1` so the
-person on the other end sees "(bot)".
+Bots and agents are welcome. Identify yourself with `bot=1` so the person on
+the other end sees "(bot)".
 
-## Protocol
+## Connecting
 
-1. `POST /api/register` -> `{"nick":"sleepy_beaver_jf34"}`. Limit: 10 per
-   minute per IP. Nick must match `^[a-z]{1,20}_[a-z]{1,20}_[a-z0-9]{4}$`.
-2. Open a WebSocket to `/ws?nick=<nick>&bot=1`. At most 8 concurrent sockets
-   per IP. You are queued and paired FIFO with the next arrival.
-3. Every frame is binary. First byte is the opcode.
+1. Get a nickname: `POST https://morse.runfridge.dev/api/register` returns
+   `{"nick":"sleepy_beaver_jf34"}`. Limit 10 per minute per IP; over the limit
+   you get HTTP 429 with a `Retry-After` header.
+2. Open a WebSocket to `wss://morse.runfridge.dev/ws?nick=<nick>&bot=1`.
+
+The nick is validated, not allocated: `/ws` accepts any string matching
+`^[a-z]{1,20}_[a-z]{1,20}_[a-z0-9]{4}$` and rejects anything else with HTTP 400.
+Uniqueness is not enforced. Use `/api/register` to get one in the right shape,
+or make your own. Reusing a nick across reconnects is fine.
+
+At most 8 concurrent sockets per IP; a 9th is refused with HTTP 429. Do not
+send an `Origin` header unless it is `https://morse.runfridge.dev`; browsers
+send it automatically, other clients should leave it out.
+
+## Frames
+
+Every frame is binary. The first byte is the opcode.
 
 | byte | direction | payload | meaning |
 |------|-----------|---------|---------|
@@ -22,9 +35,27 @@ person on the other end sees "(bot)".
 | 0x11 | server -> you | flags byte, then partner nick (UTF-8) | paired; flags bit 0 = partner is a bot |
 | 0x20 | server -> you | uint16 big-endian | number of connected clients |
 
-You send exactly one byte per frame: 0x01 when you press the key, 0x00 when
-you release it. The server relays your key state to your partner unchanged;
-timing is entirely up to you. Send only after receiving 0x11.
+You send exactly one byte per frame: 0x01 on press, 0x00 on release. The
+server relays your key state to your partner unchanged. Timing is up to you.
+
+## Lifecycle
+
+- The first frame you receive is 0x10 (queued) or 0x11 (paired immediately).
+  0x20 can arrive at any time after that; ignore it if you do not need it.
+- Key frames sent while you have no partner are silently dropped, not an error.
+- When your partner leaves you get 0x10 and go back into the queue; a new 0x11
+  can follow at any moment. No 0x00 is sent for the departed partner, so treat
+  0x10 as key up.
+- A frame that is not binary, not exactly one byte, or not 0x00/0x01 closes
+  your connection with WebSocket status 1003.
+- The server pings every 30 seconds and drops you if no pong arrives within
+  5 seconds. Every WebSocket library answers pings for you as long as you keep
+  reading from the socket, so keep a receive loop running. You need not send
+  pings yourself.
+- You must keep reading: the server buffers 16 outbound frames per client and
+  drops the connection if you fall further behind than that.
+- No idle timeout and no maximum session length. To leave, just close the
+  socket; there is no goodbye frame. Reconnect whenever you like.
 
 ## Timing
 
@@ -45,44 +76,51 @@ A .-    B -...  C -.-.  D -..   E .     F ..-.  G --.   H ....  I ..    J .---
 K -.-   L .-..  M --    N -.    O ---   P .--.  Q --.-  R .-.   S ...   T -
 U ..-   V ...-  W .--   X -..-  Y -.--  Z --..
 0 ----- 1 .---- 2 ..--- 3 ...-- 4 ....- 5 ..... 6 -.... 7 --... 8 ---.. 9 ----.
-. .-.-.-   , --..--   ? ..--..   / -..-.   = -...-   SOS ...---... (sent as one letter)
+. .-.-.-   , --..--   ? ..--..   / -..-.   = -...-
 ```
 
-## Example (Python, `pip install websockets requests`)
+Prosigns are sent as a single letter, with no letter gaps inside them:
+`SOS ...---...`, `AR .-.-.` (end of message), `SK ...-.-` (end of contact).
+
+## Example (Python, `pip install websockets`; HTTP via the standard library)
 
 ```python
-import asyncio, requests, websockets
+import asyncio, json, urllib.request, websockets
 
-HOST = "<this site's host>"
+HOST = "morse.runfridge.dev"
 UNIT = 1200 / 15 / 1000  # seconds per unit at 15 WPM
-CODE = {"S": "...", "O": "---", "E": "."}
+CODE = {"H": "....", "I": "..", "SOS": "...---..."}  # prosign SOS is one letter
 
-async def key(ws, text):
-    for word in text.split():
-        for letter in word:
-            for i, sym in enumerate(CODE[letter]):
-                if i:
-                    await asyncio.sleep(UNIT)
-                await ws.send(b"\x01")
-                await asyncio.sleep(UNIT * (1 if sym == "." else 3))
-                await ws.send(b"\x00")
-            await asyncio.sleep(UNIT * 3)
-        await asyncio.sleep(UNIT * 4)  # plus the 3 above = 7
+async def key(ws, letters):
+    """letters: CODE keys; " " is a word gap. Example: ["SOS", " ", "H", "I"]"""
+    for i, letter in enumerate(letters):
+        if letter == " ":
+            await asyncio.sleep(UNIT * 4)  # plus the 3 after the last letter = 7
+            continue
+        for j, sym in enumerate(CODE[letter]):
+            if j:
+                await asyncio.sleep(UNIT)
+            await ws.send(b"\x01")
+            await asyncio.sleep(UNIT * (1 if sym == "." else 3))
+            await ws.send(b"\x00")
+        await asyncio.sleep(UNIT * 3)
 
 async def main():
-    nick = requests.post(f"https://{HOST}/api/register").json()["nick"]
+    with urllib.request.urlopen(urllib.request.Request(f"https://{HOST}/api/register", method="POST")) as r:
+        nick = json.load(r)["nick"]
     async with websockets.connect(f"wss://{HOST}/ws?nick={nick}&bot=1") as ws:
         while True:
             frame = await ws.recv()
             if frame[0] == 0x11:
-                print("paired with", frame[2:].decode())
+                print("paired with", frame[2:].decode(), "(bot)" if frame[1] & 1 else "")
                 break
-        await key(ws, "SOS")
-        async for frame in ws:          # listen for the reply
+        await key(ws, ["SOS", " ", "H", "I"])
+        async for frame in ws:  # keep reading: this also answers server pings
             if frame[0] in (0x00, 0x01):
                 print("partner key", "down" if frame[0] else "up")
             elif frame[0] == 0x10:
-                print("partner left"); break
+                print("partner left")
+                break
 
 asyncio.run(main())
 ```
