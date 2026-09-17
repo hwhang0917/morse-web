@@ -34,9 +34,14 @@ body {
   display: inline-block; width: .7em; height: .7em; border-radius: 50%; margin-right: .4em;
   background: #666; vertical-align: middle;
 }
-#nick .dot.live { background: #e53935; box-shadow: 0 0 .5em #e53935; animation: blink 1.2s infinite; }
-@keyframes blink { 50% { opacity: .25; } }
-@media (prefers-reduced-motion: reduce) { #nick .dot.live { animation: none; } }
+#nick .dot.live { background: #e53935; animation: glow 1.6s ease-in-out infinite; }
+/* A filament warms up and cools down rather than switching: fade the colour
+   and the halo together, so the dim phase is a deep red rather than a gap. */
+@keyframes glow {
+  0%, 100% { background: #5a1210; box-shadow: 0 0 0 0 rgba(229, 57, 53, 0); }
+  50%      { background: #ff5148; box-shadow: 0 0 .6em .15em rgba(229, 57, 53, .8); }
+}
+@media (prefers-reduced-motion: reduce) { #nick .dot.live { animation: none; box-shadow: 0 0 .5em #e53935; } }
 #status { min-height: 1.4em; }
 footer { position: fixed; bottom: .8rem; font-size: .8rem; opacity: .5; }
 footer a { color: inherit; }
