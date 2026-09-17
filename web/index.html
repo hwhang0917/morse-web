@@ -29,6 +29,14 @@ body {
 #nick { font-size: 1.2rem; }
 #nick .name { color: var(--accent); font-weight: 600; }
 #nick .tag { opacity: .5; font-size: .9em; }
+/* Recording-light style: gray when idle, blinking red during a live session. */
+#nick .dot {
+  display: inline-block; width: .7em; height: .7em; border-radius: 50%; margin-right: .4em;
+  background: #666; vertical-align: middle;
+}
+#nick .dot.live { background: #e53935; box-shadow: 0 0 .5em #e53935; animation: blink 1.2s infinite; }
+@keyframes blink { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { #nick .dot.live { animation: none; } }
 #status { min-height: 1.4em; }
 footer { position: fixed; bottom: .8rem; font-size: .8rem; opacity: .5; }
 footer a { color: inherit; }
@@ -106,7 +114,7 @@ body.rx { background: #23305a; }
   </div>
 </details>
 <div id="toast" role="status" aria-live="polite"></div>
-<div id="nick"><span class="name"></span> <span class="tag"></span></div>
+<div id="nick"><span class="dot"></span><span class="name"></span> <span class="tag"></span></div>
 <div id="status">connecting…</div>
 <button id="key" aria-label="Morse key">KEY</button>
 <footer>v{{VERSION}} · <a href="https://github.com/hwhang0917/morse-web">GitHub</a></footer>
@@ -127,6 +135,7 @@ const DEFAULT_SETTINGS = { sound: true, vibrate: false, flash: false };
 
 const $name = document.querySelector('#nick .name');
 const $tag = document.querySelector('#nick .tag');
+const $dot = document.querySelector('#nick .dot');
 const $status = document.getElementById('status');
 const $key = document.getElementById('key');
 const $toast = document.getElementById('toast');
@@ -193,6 +202,7 @@ function vibrate(on) {
 let ws, retryTimer, nick = '', partner = '', state = 'connecting…', down = false;
 
 function render() {
+  $dot.classList.toggle('live', !!partner);
   const needAudio = settings.sound && ac.state !== 'running';
   $status.textContent = state + (needAudio ? ' · tap the key to enable audio' : '');
 }
