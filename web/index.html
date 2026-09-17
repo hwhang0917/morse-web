@@ -120,7 +120,10 @@ body.rx { background: #23305a; }
   }
   @keyframes slide-in { from { transform: translateX(100%); } }
 }
-#menu button { padding: .5rem; background: #333; color: #ddd; border: 1px solid #555; border-radius: .3rem; cursor: pointer; }
+#menu button, #menu a {
+  display: block; padding: .5rem; background: #333; color: #ddd; border: 1px solid #555; border-radius: .3rem;
+  cursor: pointer; text-align: center; text-decoration: none; font: inherit;
+}
 </style>
 </head>
 <body>
@@ -133,6 +136,7 @@ body.rx { background: #23305a; }
     <label>Flash screen on incoming <input type="checkbox" data-setting="flash"></label>
     <label title="Wait for a human instead of pairing with a bot">Prefer human <input type="checkbox" data-setting="human"></label>
     <button id="newnick" type="button">New nickname</button>
+    <a id="mcplink" href="/mcp.html" target="_blank" rel="noopener">MCP: use from an AI client</a>
   </div>
 </details>
 <div id="toast" role="status" aria-live="polite"></div>
