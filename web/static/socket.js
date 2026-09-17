@@ -16,7 +16,8 @@ export async function registerNick() {
   const r = await fetch('/api/register', { method: 'POST' });
   if (!r.ok) throw new Error(`register: ${r.status}`);
   const n = (await r.json()).nick;
-  document.cookie = `nick=${n}; Max-Age=${NICK_COOKIE_MAX_AGE_S}; Path=/; SameSite=Lax`;
+  const secure = location.protocol === 'https:' ? '; Secure' : '';
+  document.cookie = `nick=${n}; Max-Age=${NICK_COOKIE_MAX_AGE_S}; Path=/; SameSite=Lax${secure}`;
   return n;
 }
 

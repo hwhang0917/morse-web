@@ -60,9 +60,10 @@ func (l *limiter) allow(key string) bool {
 	return b.n <= l.limit
 }
 
-// clientIP returns the peer address, or the first X-Forwarded-For hop when
-// the peer is a private/loopback address (i.e. a reverse proxy in front of
-// us). Trusting the header from arbitrary peers would let anyone spoof it.
+// clientIP returns the peer address, or the last X-Forwarded-For hop when the
+// peer is a private/loopback address (i.e. a reverse proxy in front of us).
+// The last hop is the one that proxy appended; earlier entries are whatever
+// the client chose to send, so they can't be trusted for rate limiting.
 func clientIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
@@ -71,13 +72,43 @@ func clientIP(r *http.Request) string {
 	addr, err := netip.ParseAddr(host)
 	if err == nil && (addr.IsPrivate() || addr.IsLoopback()) {
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			first, _, _ := strings.Cut(xff, ",")
-			if fwd, err := netip.ParseAddr(strings.TrimSpace(first)); err == nil {
+			hops := strings.Split(xff, ",")
+			if fwd, err := netip.ParseAddr(strings.TrimSpace(hops[len(hops)-1])); err == nil {
 				return fwd.String()
 			}
 		}
 	}
 	return host
+}
+
+// Concurrent WebSocket cap per client IP, so one client can't fill the
+// matchmaking queue with ghosts. Real users need one, maybe a few tabs.
+const maxConnsPerIP = 8
+
+type connGauge struct {
+	mu sync.Mutex
+	n  map[string]int
+}
+
+func (g *connGauge) acquire(ip string) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.n == nil {
+		g.n = map[string]int{}
+	}
+	if g.n[ip] >= maxConnsPerIP {
+		return false
+	}
+	g.n[ip]++
+	return true
+}
+
+func (g *connGauge) release(ip string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.n[ip]--; g.n[ip] <= 0 {
+		delete(g.n, ip)
+	}
 }
 
 // rateLimit wraps h, answering 429 once a client IP exceeds l.

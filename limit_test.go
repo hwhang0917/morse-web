@@ -41,3 +41,22 @@ func TestRegisterRateLimited(t *testing.T) {
 		t.Fatalf("over limit: status=%d retry-after=%q", r.StatusCode, r.Header.Get("Retry-After"))
 	}
 }
+
+func TestClientIPUsesLastForwardedHop(t *testing.T) {
+	cases := []struct{ peer, xff, want string }{
+		{"127.0.0.1:1234", "203.0.113.9, 198.51.100.7", "198.51.100.7"}, // proxy appends the real client last
+		{"10.0.0.2:1234", "198.51.100.7", "198.51.100.7"},
+		{"10.0.0.2:1234", "", "10.0.0.2"},
+		{"8.8.8.8:1234", "203.0.113.9", "8.8.8.8"}, // public peer: header is untrusted
+	}
+	for _, c := range cases {
+		r := httptest.NewRequest("GET", "/", nil)
+		r.RemoteAddr = c.peer
+		if c.xff != "" {
+			r.Header.Set("X-Forwarded-For", c.xff)
+		}
+		if got := clientIP(r); got != c.want {
+			t.Errorf("peer=%s xff=%q: got %s, want %s", c.peer, c.xff, got, c.want)
+		}
+	}
+}

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -52,4 +53,44 @@ func TestWebSocketEndToEnd(t *testing.T) {
 
 	b.Close(websocket.StatusNormalClosure, "")
 	read(a, []byte{opWaiting})
+}
+
+func TestWebSocketPerIPCap(t *testing.T) {
+	h := newHub()
+	go h.run()
+	srv := httptest.NewServer(newMux(h))
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	url := strings.Replace(srv.URL, "http", "ws", 1) + "/ws?nick=sleepy_beaver_aaaa"
+
+	var conns []*websocket.Conn
+	for i := 0; i < maxConnsPerIP; i++ {
+		c, _, err := websocket.Dial(ctx, url, nil)
+		if err != nil {
+			t.Fatalf("conn %d: %v", i, err)
+		}
+		conns = append(conns, c)
+	}
+	if _, resp, err := websocket.Dial(ctx, url, nil); err == nil || resp == nil || resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("conn %d should be refused with 429, got err=%v resp=%v", maxConnsPerIP, err, resp)
+	}
+
+	conns[0].Close(websocket.StatusNormalClosure, "")
+	// The slot is released after the server notices the close; retry briefly.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		c, _, err := websocket.Dial(ctx, url, nil)
+		if err == nil {
+			c.CloseNow()
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("slot not released after close: %v", err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	for _, c := range conns[1:] {
+		c.CloseNow()
+	}
 }

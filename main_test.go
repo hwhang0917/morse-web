@@ -54,10 +54,20 @@ func TestRoutes(t *testing.T) {
 		"/settings.js": "text/javascript",
 		"/audio.js":    "text/javascript",
 		"/socket.js":   "text/javascript",
+		"/app.js":      "text/javascript",
 	} {
 		if r := get(path); r.StatusCode != 200 || !strings.HasPrefix(r.Header.Get("Content-Type"), typ) {
 			t.Fatalf("GET %s: status=%d type=%q, want %s", path, r.StatusCode, r.Header.Get("Content-Type"), typ)
 		}
+	}
+
+	for _, h := range []string{"Content-Security-Policy", "X-Content-Type-Options", "Referrer-Policy", "X-Frame-Options"} {
+		if r.Header.Get(h) == "" {
+			t.Fatalf("GET /: missing %s header", h)
+		}
+	}
+	if csp := r.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'self'") || strings.Contains(string(body), "<script type=\"module\">") {
+		t.Fatalf("CSP %q requires the page script to be external", csp)
 	}
 
 	r = get("/version")

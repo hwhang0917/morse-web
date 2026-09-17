@@ -81,6 +81,22 @@ func origin(r *http.Request) string {
 	return scheme + "://" + r.Host
 }
 
+// Everything the page needs is same-origin, so the policy can be strict; the
+// stylesheet is the only inline resource left.
+const csp = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+	"img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hd := w.Header()
+		hd.Set("Content-Security-Policy", csp)
+		hd.Set("X-Content-Type-Options", "nosniff")
+		hd.Set("X-Frame-Options", "DENY")
+		hd.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		next.ServeHTTP(w, r)
+	})
+}
+
 func newMux(h *hub) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
@@ -114,16 +130,23 @@ func newMux(h *hub) http.Handler {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		fmt.Fprintln(w, version)
 	})
-	mux.HandleFunc("GET /ws", func(w http.ResponseWriter, r *http.Request) { serveWS(h, w, r) })
-	return mux
+	gauge := &connGauge{}
+	mux.HandleFunc("GET /ws", func(w http.ResponseWriter, r *http.Request) { serveWS(h, gauge, w, r) })
+	return securityHeaders(mux)
 }
 
-func serveWS(h *hub, w http.ResponseWriter, r *http.Request) {
+func serveWS(h *hub, gauge *connGauge, w http.ResponseWriter, r *http.Request) {
 	nick := r.URL.Query().Get("nick")
 	if !nickRE.MatchString(nick) {
 		http.Error(w, "bad nick", http.StatusBadRequest)
 		return
 	}
+	ip := clientIP(r)
+	if !gauge.acquire(ip) {
+		http.Error(w, "too many connections", http.StatusTooManyRequests)
+		return
+	}
+	defer gauge.release(ip)
 	// Default AcceptOptions enforce same-origin, which is right: this binary
 	// serves the page. Add OriginPatterns only if a proxy rewrites Host.
 	conn, err := websocket.Accept(w, r, nil)
