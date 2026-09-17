@@ -1,7 +1,6 @@
 services:
   morse-web:
-    build: .
-    image: morse-web
+    image: ghcr.io/hwhang0917/morse-web:latest
     ports:
       - "8080:8080"
     restart: unless-stopped
