@@ -25,6 +25,15 @@ body {
 body.tx #key { background: var(--accent); color: #111; }
 body.rx { background: #23305a; }
 
+#toast {
+  position: fixed; top: 1.2rem; left: 50%; transform: translateX(-50%);
+  padding: .6rem 1.2rem; border-radius: .4rem; font-weight: 600; color: #fff;
+  opacity: 0; transition: opacity .25s; pointer-events: none; max-width: calc(100vw - 6rem);
+}
+#toast.show { opacity: 1; }
+#toast.ok { background: #2e7d32; }
+#toast.bad { background: #c62828; }
+
 /* Native collapsible: no JS needed for open/close. */
 #menu { position: fixed; top: 1rem; right: 1rem; }
 #menu summary {
@@ -51,6 +60,7 @@ body.rx { background: #23305a; }
     <button id="newnick" type="button">New nickname</button>
   </div>
 </details>
+<div id="toast" role="status" aria-live="polite"></div>
 <div id="nick"><span class="name"></span> <span class="tag"></span></div>
 <div id="status">connecting…</div>
 <button id="key" aria-label="Morse key">KEY</button>
@@ -62,6 +72,7 @@ const RECONNECT_MS = 2000, TONE_LOCAL_HZ = 600, TONE_REMOTE_HZ = 700, RAMP_S = 0
 // is a train of short pulses: a lost cancel overshoots by one pulse, not seconds.
 const VIBRATE_PULSE_MS = 100, VIBRATE_REISSUE_MS = 80;
 const NICK_COOKIE_MAX_AGE_S = 365 * 24 * 3600;
+const TOAST_MS = 3000;
 const OP = { KEY_UP: 0x00, KEY_DOWN: 0x01, WAITING: 0x10, PAIRED: 0x11 };
 // Mirrors nickRE on the server; a stale cookie that fails it would 400 forever.
 const NICK_RE = /^[a-z]{1,20}_[a-z]{1,20}_[a-z0-9]{4}$/;
@@ -72,6 +83,15 @@ const $name = document.querySelector('#nick .name');
 const $tag = document.querySelector('#nick .tag');
 const $status = document.getElementById('status');
 const $key = document.getElementById('key');
+const $toast = document.getElementById('toast');
+
+let toastTimer;
+function toast(text, kind) {
+  $toast.textContent = text;
+  $toast.className = `show ${kind}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => $toast.classList.remove('show'), TOAST_MS);
+}
 
 // ---- settings (localStorage) ----
 function loadSettings() {
@@ -117,7 +137,7 @@ function vibrate(on) {
 }
 
 // ---- state ----
-let ws, retryTimer, nick = '', state = 'connecting…', down = false;
+let ws, retryTimer, nick = '', partner = '', state = 'connecting…', down = false;
 
 function render() {
   const needAudio = settings.sound && ac.state !== 'running';
@@ -184,14 +204,25 @@ function connect() {
     switch (b[0]) {
       case OP.KEY_DOWN: rx(true); return;
       case OP.KEY_UP: rx(false); return;
-      case OP.WAITING: rx(false); state = 'waiting for a partner…'; break;
-      case OP.PAIRED: state = 'connected to ' + new TextDecoder().decode(b.subarray(1)); break;
+      case OP.WAITING:
+        rx(false);
+        // The same frame also means "partner left"; only toast when there was one.
+        if (partner) toast(`${partner} disconnected`, 'bad');
+        partner = '';
+        state = 'waiting for a partner…';
+        break;
+      case OP.PAIRED:
+        partner = new TextDecoder().decode(b.subarray(1));
+        toast(`connected to ${partner}`, 'ok');
+        state = 'connected to ' + partner;
+        break;
     }
     render();
   };
   sock.onclose = () => {
     rx(false);
     setKey(false);
+    partner = '';
     state = 'disconnected, retrying…';
     render();
     retryTimer = setTimeout(connect, RECONNECT_MS);
@@ -207,6 +238,7 @@ document.getElementById('newnick').addEventListener('click', async () => {
   ws.onclose = null;
   ws.close();
   rx(false);
+  partner = '';
   state = 'connecting…';
   render();
   connect();
