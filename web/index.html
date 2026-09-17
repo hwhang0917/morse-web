@@ -24,22 +24,16 @@
 </script>
 <style>
 :root { color-scheme: dark; --accent: #e8b23a; }
-html, body { height: 100%; margin: 0; }
+html, body { height: 100%; margin: 0; overflow: hidden; }
 body {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.5rem;
   background: #111; color: #ddd; font-family: system-ui, sans-serif; transition: background .05s;
 }
-h1 { font-size: 1rem; font-weight: 500; letter-spacing: .3em; text-transform: uppercase; opacity: .5; margin: 0; }
-#about { max-width: 28rem; margin: 0; padding: 0 1.5rem; text-align: center; font-size: .9rem; opacity: .6; line-height: 1.5; }
-#ref { font-size: .85rem; opacity: .7; }
-#ref summary { cursor: pointer; text-align: center; user-select: none; -webkit-tap-highlight-color: transparent; }
-#ref > div {
-  display: grid; grid-template-columns: repeat(5, auto auto); gap: .3rem 1rem; justify-content: center;
-  margin-top: .8rem; padding: 0 1rem;
-}
+#ref { font-size: .85rem; border-top: 1px solid #444; padding-top: .6rem; }
+#ref summary { cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent; }
+#ref > div { display: grid; grid-template-columns: repeat(3, auto auto); gap: .25rem .8rem; justify-content: start; margin-top: .6rem; }
 #ref span { font-weight: 600; text-align: right; }
 #ref code { color: var(--accent); letter-spacing: .1em; }
-@media (max-width: 600px) { #ref > div { grid-template-columns: repeat(3, auto auto); } }
 #nick { font-size: 1.2rem; }
 #nick .name { color: var(--accent); font-weight: 600; }
 #nick .tag { opacity: .5; font-size: .9em; }
@@ -58,8 +52,8 @@ h1 { font-size: 1rem; font-weight: 500; letter-spacing: .3em; text-transform: up
 @media (prefers-reduced-motion: reduce) { #nick .dot.live { animation: none; box-shadow: 0 0 .5em #e53935; } }
 #status { min-height: 1.4em; }
 #online { position: fixed; top: 1.3rem; left: 1.2rem; font-size: .9rem; opacity: .6; }
-footer { position: fixed; bottom: .8rem; font-size: .8rem; opacity: .5; }
-footer a { color: inherit; }
+#menu footer { font-size: .8rem; opacity: .5; text-align: center; }
+#menu footer a { display: inline; padding: 0; background: none; border: none; color: inherit; }
 #key {
   width: min(60vw, 60vh); aspect-ratio: 1; border-radius: 50%; border: none;
   background: #333; color: #ccc; font-size: 1.5rem; letter-spacing: .2em; cursor: pointer;
@@ -90,6 +84,7 @@ body.rx { background: #23305a; }
 #menu[open] summary::before { content: "✕"; }
 #menu > div {
   position: absolute; right: 0; margin-top: .3rem; min-width: 16rem; padding: .9rem 1rem;
+  max-height: calc(100vh - 4rem); overflow-y: auto;
   background: #2a2a2a; border: 1px solid #555; border-radius: .5rem; display: grid; gap: .8rem;
   box-shadow: 0 .5rem 1.5rem rgba(0, 0, 0, .6);
 }
@@ -115,7 +110,7 @@ body.rx { background: #23305a; }
   #menu > div {
     position: fixed; top: 0; right: 0; bottom: 0; margin: 0; width: min(80vw, 20rem);
     border: none; border-left: 1px solid #555; border-radius: 0;
-    padding: 4.5rem 1.2rem 1.2rem; align-content: start; font-size: 1.05rem;
+    padding: 4.5rem 1.2rem 1.2rem; align-content: start; font-size: 1.05rem; max-height: none; overflow-y: auto;
     animation: slide-in .2s ease-out;
   }
   @keyframes slide-in { from { transform: translateX(100%); } }
@@ -137,28 +132,26 @@ body.rx { background: #23305a; }
     <label title="Wait for a human instead of pairing with a bot">Prefer human <input type="checkbox" data-setting="human"></label>
     <button id="newnick" type="button">New nickname</button>
     <a id="mcplink" href="/mcp.html" target="_blank" rel="noopener">MCP: use from an AI client</a>
+    <details id="ref">
+      <summary>Morse code reference</summary>
+      <div>
+        <span>A</span><code>.-</code><span>B</span><code>-...</code><span>C</span><code>-.-.</code><span>D</span><code>-..</code><span>E</span><code>.</code>
+        <span>F</span><code>..-.</code><span>G</span><code>--.</code><span>H</span><code>....</code><span>I</span><code>..</code><span>J</span><code>.---</code>
+        <span>K</span><code>-.-</code><span>L</span><code>.-..</code><span>M</span><code>--</code><span>N</span><code>-.</code><span>O</span><code>---</code>
+        <span>P</span><code>.--.</code><span>Q</span><code>--.-</code><span>R</span><code>.-.</code><span>S</span><code>...</code><span>T</span><code>-</code>
+        <span>U</span><code>..-</code><span>V</span><code>...-</code><span>W</span><code>.--</code><span>X</span><code>-..-</code><span>Y</span><code>-.--</code>
+        <span>Z</span><code>--..</code><span>0</span><code>-----</code><span>1</span><code>.----</code><span>2</span><code>..---</code><span>3</span><code>...--</code>
+        <span>4</span><code>....-</code><span>5</span><code>.....</code><span>6</span><code>-....</code><span>7</span><code>--...</code><span>8</span><code>---..</code>
+        <span>9</span><code>----.</code>
+      </div>
+    </details>
+    <footer>v{{VERSION}} · <a href="https://github.com/hwhang0917/morse-web">GitHub</a></footer>
   </div>
 </details>
 <div id="toast" role="status" aria-live="polite"></div>
-<h1>morse-web</h1>
 <div id="nick"><span class="dot"></span><span class="name"></span> <span class="tag"></span></div>
 <div id="status">connecting…</div>
 <button id="key" aria-label="Morse key">KEY</button>
-<p id="about">Hold the key to send Morse code to whoever is on the other end: a short press is a dot, a long press is a dash. You hear your own key and theirs.</p>
-<details id="ref">
-  <summary>Morse code reference</summary>
-  <div>
-    <span>A</span><code>.-</code><span>B</span><code>-...</code><span>C</span><code>-.-.</code><span>D</span><code>-..</code><span>E</span><code>.</code>
-    <span>F</span><code>..-.</code><span>G</span><code>--.</code><span>H</span><code>....</code><span>I</span><code>..</code><span>J</span><code>.---</code>
-    <span>K</span><code>-.-</code><span>L</span><code>.-..</code><span>M</span><code>--</code><span>N</span><code>-.</code><span>O</span><code>---</code>
-    <span>P</span><code>.--.</code><span>Q</span><code>--.-</code><span>R</span><code>.-.</code><span>S</span><code>...</code><span>T</span><code>-</code>
-    <span>U</span><code>..-</code><span>V</span><code>...-</code><span>W</span><code>.--</code><span>X</span><code>-..-</code><span>Y</span><code>-.--</code>
-    <span>Z</span><code>--..</code><span>0</span><code>-----</code><span>1</span><code>.----</code><span>2</span><code>..---</code><span>3</span><code>...--</code>
-    <span>4</span><code>....-</code><span>5</span><code>.....</code><span>6</span><code>-....</code><span>7</span><code>--...</code><span>8</span><code>---..</code>
-    <span>9</span><code>----.</code>
-  </div>
-</details>
-<footer>v{{VERSION}} · <a href="https://github.com/hwhang0917/morse-web">GitHub</a></footer>
 <script type="module" src="/app.js"></script>
 </body>
 </html>
