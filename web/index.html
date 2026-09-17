@@ -52,18 +52,32 @@ body.rx { background: #23305a; }
 #toast.bad { background: #c62828; }
 
 /* Native collapsible: no JS needed for open/close. */
-#menu { position: fixed; top: 1rem; right: 1rem; }
+#menu { position: fixed; top: 1rem; right: 1rem; z-index: 10; }
 #menu summary {
   list-style: none; cursor: pointer; font-size: 1.6rem; line-height: 1; padding: .3rem .5rem;
   user-select: none; -webkit-tap-highlight-color: transparent;
 }
 #menu summary::-webkit-details-marker { display: none; }
 #menu > div {
-  position: absolute; right: 0; margin-top: .3rem; min-width: 13rem; padding: .8rem 1rem;
-  background: #222; border: 1px solid #444; border-radius: .5rem; display: grid; gap: .7rem;
+  position: absolute; right: 0; margin-top: .3rem; min-width: 16rem; padding: .9rem 1rem;
+  background: #2a2a2a; border: 1px solid #555; border-radius: .5rem; display: grid; gap: .8rem;
+  box-shadow: 0 .5rem 1.5rem rgba(0, 0, 0, .6);
 }
-#menu label { display: flex; align-items: center; gap: .6rem; cursor: pointer; }
+#menu label { display: flex; align-items: center; gap: .6rem; cursor: pointer; white-space: nowrap; }
 #menu label[hidden] { display: none; }
+/* Checkbox drawn as a switch; the ON/OFF word comes from the label itself. */
+#menu input[type="checkbox"] {
+  appearance: none; margin: 0 0 0 auto; width: 2.6rem; height: 1.4rem; border-radius: .7rem;
+  background: #555; position: relative; cursor: pointer; transition: background .15s;
+}
+#menu input[type="checkbox"]::before {
+  content: ""; position: absolute; top: .15rem; left: .15rem; width: 1.1rem; height: 1.1rem;
+  border-radius: 50%; background: #eee; transition: left .15s;
+}
+#menu input[type="checkbox"]:checked { background: var(--accent); }
+#menu input[type="checkbox"]:checked::before { left: 1.35rem; }
+#menu label::after { content: "OFF"; width: 2rem; font-size: .75rem; font-weight: 600; opacity: .5; }
+#menu label:has(:checked)::after { content: "ON"; color: var(--accent); opacity: 1; }
 #menu button { padding: .5rem; background: #333; color: #ddd; border: 1px solid #555; border-radius: .3rem; cursor: pointer; }
 </style>
 </head>
@@ -71,9 +85,9 @@ body.rx { background: #23305a; }
 <details id="menu">
   <summary aria-label="Settings">☰</summary>
   <div>
-    <label><input type="checkbox" data-setting="sound"> Sound</label>
-    <label id="vib" hidden><input type="checkbox" data-setting="vibrate"> Vibrate on incoming</label>
-    <label><input type="checkbox" data-setting="flash"> Flash screen on incoming</label>
+    <label>Sound <input type="checkbox" data-setting="sound"></label>
+    <label id="vib" hidden>Vibrate on incoming <input type="checkbox" data-setting="vibrate"></label>
+    <label>Flash screen on incoming <input type="checkbox" data-setting="flash"></label>
     <button id="newnick" type="button">New nickname</button>
   </div>
 </details>
@@ -102,6 +116,12 @@ const $tag = document.querySelector('#nick .tag');
 const $status = document.getElementById('status');
 const $key = document.getElementById('key');
 const $toast = document.getElementById('toast');
+const $menu = document.getElementById('menu');
+
+// Tapping anywhere outside the menu closes it.
+document.addEventListener('pointerdown', e => {
+  if ($menu.open && !e.target.closest('#menu')) $menu.open = false;
+});
 
 let toastTimer;
 function toast(text, kind) {
