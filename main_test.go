@@ -42,6 +42,21 @@ func TestRoutes(t *testing.T) {
 		t.Fatalf("GET /: status=%d type=%q version stamped=%v", r.StatusCode, r.Header.Get("Content-Type"), strings.Contains(string(body), version))
 	}
 
+	if !strings.Contains(string(body), `property="og:image" content="`+srv.URL+`/og.png"`) {
+		t.Fatalf("GET /: og:image not stamped with request origin")
+	}
+
+	for path, typ := range map[string]string{
+		"/robots.txt":  "text/plain",
+		"/favicon.svg": "image/svg+xml",
+		"/favicon.png": "image/png",
+		"/og.png":      "image/png",
+	} {
+		if r := get(path); r.StatusCode != 200 || !strings.HasPrefix(r.Header.Get("Content-Type"), typ) {
+			t.Fatalf("GET %s: status=%d type=%q, want %s", path, r.StatusCode, r.Header.Get("Content-Type"), typ)
+		}
+	}
+
 	r = get("/version")
 	body, _ = io.ReadAll(r.Body)
 	if r.StatusCode != 200 || string(body) != version+"\n" {
@@ -49,8 +64,9 @@ func TestRoutes(t *testing.T) {
 	}
 
 	r = get("/nope")
-	if r.StatusCode != 404 || !strings.HasPrefix(r.Header.Get("Content-Type"), "text/html") {
-		t.Fatalf("GET /nope: status=%d type=%q", r.StatusCode, r.Header.Get("Content-Type"))
+	body, _ = io.ReadAll(r.Body)
+	if r.StatusCode != 404 || !strings.HasPrefix(r.Header.Get("Content-Type"), "text/html") || !strings.Contains(string(body), `name="robots" content="noindex"`) {
+		t.Fatalf("GET /nope: status=%d type=%q noindex=%v", r.StatusCode, r.Header.Get("Content-Type"), strings.Contains(string(body), "noindex"))
 	}
 
 	if r := get("/ws?nick=Not_Valid"); r.StatusCode != 400 {

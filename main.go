@@ -3,10 +3,11 @@ package main
 import (
 	"bytes"
 	"context"
-	_ "embed"
+	"embed"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log"
 	"math/rand/v2"
 	"net/http"
@@ -28,8 +29,13 @@ var version = strings.TrimSpace(rawVersion)
 //go:embed web/index.html
 var rawIndexHTML []byte
 
-// The page is static, so the version is stamped in once at startup.
+// The page is static, so the version is stamped in once at startup. The
+// origin ({{ORIGIN}}) is stamped per request: OG tags need absolute URLs and
+// the host is only known when a request arrives.
 var indexHTML = bytes.ReplaceAll(rawIndexHTML, []byte("{{VERSION}}"), []byte(version))
+
+//go:embed web/static
+var staticFS embed.FS
 
 //go:embed web/404.html
 var notFoundHTML []byte
@@ -65,12 +71,32 @@ func writeJSON(w http.ResponseWriter, v any) {
 	json.NewEncoder(w).Encode(v)
 }
 
+// origin is the scheme and host a client used to reach us, honouring a
+// TLS-terminating proxy's X-Forwarded-Proto.
+func origin(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host
+}
+
 func newMux(h *hub) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(indexHTML)
+		w.Write(bytes.ReplaceAll(indexHTML, []byte("{{ORIGIN}}"), []byte(origin(r))))
 	})
+	// One route per embedded static file (favicon, robots.txt, og image), so
+	// the catch-all 404 below still owns every other path.
+	static, _ := fs.Sub(staticFS, "web/static")
+	entries, _ := fs.ReadDir(static, ".")
+	for _, e := range entries {
+		name := e.Name()
+		mux.HandleFunc("GET /"+name, func(w http.ResponseWriter, r *http.Request) {
+			http.ServeFileFS(w, r, static, name)
+		})
+	}
 	// Designated 404 page for every other GET. Not served via http.FS because
 	// that would force a 200.
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
