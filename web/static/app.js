@@ -41,7 +41,7 @@ function showNick() {
 // Tapping anywhere outside the panel closes it. The drawer backdrop is a
 // pseudo-element of #menu itself, so test against the panel and summary only.
 document.addEventListener('pointerdown', e => {
-  if ($menu.open && !e.target.closest('#menu > div, #menu summary')) $menu.open = false;
+  if ($menu.open && !e.target.closest('#menu > div, #menu > summary')) $menu.open = false;
 });
 
 // ---- settings ----

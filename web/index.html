@@ -75,13 +75,13 @@ body.rx { background: #23305a; }
 
 /* Native collapsible: no JS needed for open/close. */
 #menu { position: fixed; top: 1rem; right: 1rem; z-index: 10; }
-#menu summary {
+#menu > summary {
   list-style: none; cursor: pointer; font-size: 1.6rem; line-height: 1; padding: .3rem .5rem;
   user-select: none; -webkit-tap-highlight-color: transparent; position: relative; z-index: 1;
 }
-#menu summary::-webkit-details-marker { display: none; }
-#menu summary::before { content: "☰"; }
-#menu[open] summary::before { content: "✕"; }
+#menu > summary::-webkit-details-marker { display: none; }
+#menu > summary::before { content: "☰"; }
+#menu[open] > summary::before { content: "✕"; }
 #menu > div {
   position: absolute; right: 0; margin-top: .3rem; min-width: 16rem; padding: .9rem 1rem;
   max-height: calc(100vh - 4rem); overflow-y: auto;
