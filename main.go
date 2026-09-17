@@ -104,9 +104,9 @@ func newMux(h *hub) http.Handler {
 		w.WriteHeader(http.StatusNotFound)
 		w.Write(notFoundHTML)
 	})
-	mux.HandleFunc("POST /api/register", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/register", rateLimit(newLimiter(registerLimit, registerWindow), func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]string{"nick": newNick()})
-	})
+	}))
 	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]int32{"waiting": h.nWaiting.Load(), "paired": h.nPaired.Load()})
 	})
