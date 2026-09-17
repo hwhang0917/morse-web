@@ -1,0 +1,14 @@
+services:
+  morse-web:
+    build: .
+    image: morse-web
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    environment:
+      # Keep the GC ahead of the box; ~37 KB per socket measured.
+      GOMEMLIMIT: 1200MiB
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576

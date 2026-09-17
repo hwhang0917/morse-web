@@ -1,0 +1,4 @@
+.git
+morse-web*
+Dockerfile
+docker-compose.yml
