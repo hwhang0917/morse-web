@@ -30,11 +30,18 @@ func TestWebSocketEndToEnd(t *testing.T) {
 		}
 		return c
 	}
+	// read skips online-count broadcasts; the hub test covers those.
 	read := func(c *websocket.Conn, want []byte) {
 		t.Helper()
-		typ, b, err := c.Read(ctx)
-		if err != nil || typ != websocket.MessageBinary || !bytes.Equal(b, want) {
-			t.Fatalf("got %q (%v, err=%v), want %q", b, typ, err, want)
+		for {
+			typ, b, err := c.Read(ctx)
+			if err == nil && typ == websocket.MessageBinary && len(b) > 0 && b[0] == opOnline {
+				continue
+			}
+			if err != nil || typ != websocket.MessageBinary || !bytes.Equal(b, want) {
+				t.Fatalf("got %q (%v, err=%v), want %q", b, typ, err, want)
+			}
+			return
 		}
 	}
 

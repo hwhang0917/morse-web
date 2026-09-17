@@ -43,6 +43,7 @@ body {
 }
 @media (prefers-reduced-motion: reduce) { #nick .dot.live { animation: none; box-shadow: 0 0 .5em #e53935; } }
 #status { min-height: 1.4em; }
+#online { position: fixed; top: 1.3rem; left: 1.2rem; font-size: .9rem; opacity: .6; }
 footer { position: fixed; bottom: .8rem; font-size: .8rem; opacity: .5; }
 footer a { color: inherit; }
 #key {
@@ -109,6 +110,7 @@ body.rx { background: #23305a; }
 </style>
 </head>
 <body>
+<div id="online" aria-live="polite"></div>
 <details id="menu">
   <summary aria-label="Settings"></summary>
   <div>

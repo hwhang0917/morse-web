@@ -12,8 +12,8 @@ func fakeClient(nick string) *client {
 	return &client{nick: nick, send: make(chan []byte, sendBuf), cancel: func() {}}
 }
 
-// recv blocks for the next frame pushed to c, or fails the test.
-func recv(t *testing.T, c *client) ([]byte, bool) {
+// recvAny blocks for the next frame pushed to c, or fails the test.
+func recvAny(t *testing.T, c *client) ([]byte, bool) {
 	t.Helper()
 	select {
 	case b, ok := <-c.send:
@@ -21,6 +21,27 @@ func recv(t *testing.T, c *client) ([]byte, bool) {
 	case <-time.After(recvTimeout):
 		t.Fatalf("%s: no frame within %v", c.nick, recvTimeout)
 		return nil, false
+	}
+}
+
+// recv is recvAny minus online-count broadcasts, which have their own test.
+func recv(t *testing.T, c *client) ([]byte, bool) {
+	t.Helper()
+	for {
+		b, ok := recvAny(t, c)
+		if !ok || b[0] != opOnline {
+			return b, ok
+		}
+	}
+}
+
+func online(n int) []byte { return []byte{opOnline, byte(n >> 8), byte(n)} }
+
+func expectAny(t *testing.T, c *client, want []byte) {
+	t.Helper()
+	got, ok := recvAny(t, c)
+	if !ok || !bytes.Equal(got, want) {
+		t.Fatalf("%s: got %q (open=%v), want %q", c.nick, got, ok, want)
 	}
 }
 
@@ -114,4 +135,24 @@ func TestHubRelaysKeyToPartner(t *testing.T) {
 	expect(t, b, keyDown)
 	h.relay <- keyMsg{from: b, down: false}
 	expect(t, a, keyUp)
+}
+
+func TestHubBroadcastsOnlineCount(t *testing.T) {
+	h := newHub()
+	go h.run()
+
+	a, b := fakeClient("A"), fakeClient("B")
+	h.register <- a
+	expectAny(t, a, []byte{opWaiting})
+	expectAny(t, a, online(1))
+
+	h.register <- b
+	expectAny(t, a, paired("B"))
+	expectAny(t, b, paired("A"))
+	expectAny(t, a, online(2))
+	expectAny(t, b, online(2))
+
+	h.unregister <- a
+	expectAny(t, b, []byte{opWaiting})
+	expectAny(t, b, online(1))
 }

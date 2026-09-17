@@ -11,6 +11,7 @@ const $status = document.getElementById('status');
 const $key = document.getElementById('key');
 const $toast = document.getElementById('toast');
 const $menu = document.getElementById('menu');
+const $online = document.getElementById('online');
 
 let nick = '', partner = '', state = 'connecting…', down = false;
 
@@ -97,6 +98,9 @@ const socket = createSocket({
     state = 'waiting for a partner…';
     render();
   },
+  onOnline(n) {
+    $online.textContent = `${n} online`;
+  },
   onPaired(p) {
     partner = p;
     toast(`connected to ${partner}`, 'ok');
@@ -104,6 +108,7 @@ const socket = createSocket({
     render();
   },
   onClose() {
+    $online.textContent = '';
     rx(false);
     setKey(false);
     partner = '';

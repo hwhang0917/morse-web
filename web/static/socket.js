@@ -2,7 +2,7 @@
 
 const RECONNECT_MS = 2000;
 const NICK_COOKIE_MAX_AGE_S = 365 * 24 * 3600;
-const OP = { KEY_UP: 0x00, KEY_DOWN: 0x01, WAITING: 0x10, PAIRED: 0x11 };
+const OP = { KEY_UP: 0x00, KEY_DOWN: 0x01, WAITING: 0x10, PAIRED: 0x11, ONLINE: 0x20 };
 // Mirrors nickRE on the server; a stale cookie that fails it would 400 forever.
 const NICK_RE = /^[a-z]{1,20}_[a-z]{1,20}_[a-z0-9]{4}$/;
 
@@ -22,8 +22,9 @@ export async function registerNick() {
 }
 
 // createSocket returns a connection that reconnects itself until stop() is
-// called. Handlers: onKey(down), onWaiting(), onPaired(partnerNick), onClose().
-export function createSocket({ onKey, onWaiting, onPaired, onClose }) {
+// called. Handlers: onKey(down), onWaiting(), onPaired(partnerNick),
+// onOnline(count), onClose().
+export function createSocket({ onKey, onWaiting, onPaired, onOnline, onClose }) {
   let ws, retryTimer, nick;
 
   function connect(newNick) {
@@ -38,6 +39,7 @@ export function createSocket({ onKey, onWaiting, onPaired, onClose }) {
         case OP.KEY_UP: onKey(false); break;
         case OP.WAITING: onWaiting(); break;
         case OP.PAIRED: onPaired(new TextDecoder().decode(b.subarray(1))); break;
+        case OP.ONLINE: onOnline((b[1] << 8) | b[2]); break;
       }
     };
     sock.onclose = () => {

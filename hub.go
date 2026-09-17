@@ -15,6 +15,7 @@ const (
 	opKeyDown = 0x01 // both directions, no payload
 	opWaiting = 0x10 // server->client; also means "partner left"
 	opPaired  = 0x11 // server->client, followed by partner nick (UTF-8)
+	opOnline  = 0x20 // server->client, followed by uint16 big-endian online count
 )
 
 // Shared frames so relaying allocates nothing. Never mutate.
@@ -59,6 +60,7 @@ type hub struct {
 	unregister chan *client
 	relay      chan keyMsg
 	waiting    []*client // FIFO queue
+	clients    map[*client]struct{}
 	// nPaired counts clients, not pairs.
 	nWaiting, nPaired atomic.Int32
 }
@@ -68,6 +70,7 @@ func newHub() *hub {
 		register:   make(chan *client),
 		unregister: make(chan *client),
 		relay:      make(chan keyMsg),
+		clients:    map[*client]struct{}{},
 	}
 }
 
@@ -77,8 +80,13 @@ func (h *hub) run() {
 	for {
 		select {
 		case c := <-h.register:
+			h.clients[c] = struct{}{}
+			log.Printf("connect %s (online=%d)", c.nick, len(h.clients))
 			h.enqueue(c)
+			h.broadcastOnline()
 		case c := <-h.unregister:
+			delete(h.clients, c)
+			log.Printf("disconnect %s (online=%d)", c.nick, len(h.clients))
 			for i, w := range h.waiting {
 				if w == c {
 					h.waiting = append(h.waiting[:i], h.waiting[i+1:]...)
@@ -92,6 +100,7 @@ func (h *hub) run() {
 				h.enqueue(p)
 			}
 			close(c.send)
+			h.broadcastOnline()
 		case m := <-h.relay:
 			if p := m.from.partner; p != nil {
 				if m.down {
@@ -101,6 +110,16 @@ func (h *hub) run() {
 				}
 			}
 		}
+	}
+}
+
+// broadcastOnline tells everyone how many sockets are connected.
+// ponytail: O(n) per join/leave; coalesce on a ticker if churn ever matters.
+func (h *hub) broadcastOnline() {
+	n := len(h.clients)
+	frame := []byte{opOnline, byte(n >> 8), byte(n)}
+	for c := range h.clients {
+		c.push(frame)
 	}
 }
 
