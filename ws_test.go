@@ -49,9 +49,9 @@ func TestWebSocketEndToEnd(t *testing.T) {
 	defer a.CloseNow()
 	read(a, []byte{opWaiting})
 
-	b := dial("brave_otter_bbbb")
-	read(a, append([]byte{opPaired}, "brave_otter_bbbb"...))
-	read(b, append([]byte{opPaired}, "sleepy_beaver_aaaa"...))
+	b := dial("brave_otter_bbbb&bot=1")
+	read(a, append([]byte{opPaired, flagBot}, "brave_otter_bbbb"...))
+	read(b, append([]byte{opPaired, 0}, "sleepy_beaver_aaaa"...))
 
 	if err := a.Write(ctx, websocket.MessageBinary, keyDown); err != nil {
 		t.Fatal(err)

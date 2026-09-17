@@ -27,10 +27,12 @@ docker compose up -d        # pulls ghcr.io/hwhang0917/morse-web:latest
 | Path | Purpose |
 |---|---|
 | `GET /` | web UI |
-| `GET /ws?nick=…` | WebSocket, auto-matched on connect |
+| `GET /ws?nick=…` | WebSocket, auto-matched on connect; add `&bot=1` if you are a bot |
 | `POST /api/register` | issue a nickname |
 | `GET /api/status` | waiting / paired counts |
 | `GET /version` | version string |
+
+Bots and agents: the full wire protocol, Morse timing and a Python example are in [`/llms.txt`](web/static/llms.txt).
 
 ## Release
 

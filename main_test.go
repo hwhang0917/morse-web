@@ -59,6 +59,7 @@ func TestRoutes(t *testing.T) {
 		"/socket.js":                "text/javascript",
 		"/app.js":                   "text/javascript",
 		"/.well-known/security.txt": "text/plain",
+		"/llms.txt":                 "text/plain",
 	} {
 		if r := get(path); r.StatusCode != 200 || !strings.HasPrefix(r.Header.Get("Content-Type"), typ) {
 			t.Fatalf("GET %s: status=%d type=%q, want %s", path, r.StatusCode, r.Header.Get("Content-Type"), typ)

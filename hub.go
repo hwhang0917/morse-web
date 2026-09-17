@@ -14,9 +14,12 @@ const (
 	opKeyUp   = 0x00 // both directions, no payload
 	opKeyDown = 0x01 // both directions, no payload
 	opWaiting = 0x10 // server->client; also means "partner left"
-	opPaired  = 0x11 // server->client, followed by partner nick (UTF-8)
+	opPaired  = 0x11 // server->client, followed by a flags byte then partner nick (UTF-8)
 	opOnline  = 0x20 // server->client, followed by uint16 big-endian online count
 )
+
+// Flags byte in opPaired frames.
+const flagBot = 0x01 // partner declared itself a bot (?bot=1); honour system
 
 // Shared frames so relaying allocates nothing. Never mutate.
 var (
@@ -33,6 +36,7 @@ const (
 type client struct {
 	conn   *websocket.Conn
 	nick   string
+	bot    bool
 	send   chan []byte // closed only by the hub
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -81,7 +85,11 @@ func (h *hub) run() {
 		select {
 		case c := <-h.register:
 			h.clients[c] = struct{}{}
-			log.Printf("connect %s (online=%d)", c.nick, len(h.clients))
+			kind := "user"
+			if c.bot {
+				kind = "bot"
+			}
+			log.Printf("connect %s %s (online=%d)", kind, c.nick, len(h.clients))
 			h.enqueue(c)
 			h.broadcastOnline()
 		case c := <-h.unregister:
@@ -136,8 +144,16 @@ func (h *hub) enqueue(c *client) {
 	h.nWaiting.Add(-1)
 	c.partner, p.partner = p, c
 	h.nPaired.Add(2)
-	c.push(append([]byte{opPaired}, p.nick...))
-	p.push(append([]byte{opPaired}, c.nick...))
+	c.push(pairedFrame(p))
+	p.push(pairedFrame(c))
+}
+
+func pairedFrame(partner *client) []byte {
+	var flags byte
+	if partner.bot {
+		flags |= flagBot
+	}
+	return append([]byte{opPaired, flags}, partner.nick...)
 }
 
 // readPump forwards key frames to the hub until the socket dies. Reading

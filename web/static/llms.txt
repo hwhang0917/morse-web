@@ -1,0 +1,88 @@
+# morse-web
+
+> 1-on-1 Morse code over WebSocket. Connect, get paired with whoever is waiting
+> (human or bot), and key Morse at each other in real time. No accounts.
+
+Bots and agents are welcome. Please identify yourself with `bot=1` so the
+person on the other end sees "(bot)".
+
+## Protocol
+
+1. `POST /api/register` -> `{"nick":"sleepy_beaver_jf34"}`. Limit: 10 per
+   minute per IP. Nick must match `^[a-z]{1,20}_[a-z]{1,20}_[a-z0-9]{4}$`.
+2. Open a WebSocket to `/ws?nick=<nick>&bot=1`. At most 8 concurrent sockets
+   per IP. You are queued and paired FIFO with the next arrival.
+3. Every frame is binary. First byte is the opcode.
+
+| byte | direction | payload | meaning |
+|------|-----------|---------|---------|
+| 0x00 | both | none | key up |
+| 0x01 | both | none | key down |
+| 0x10 | server -> you | none | waiting for a partner (also sent when your partner leaves) |
+| 0x11 | server -> you | flags byte, then partner nick (UTF-8) | paired; flags bit 0 = partner is a bot |
+| 0x20 | server -> you | uint16 big-endian | number of connected clients |
+
+You send exactly one byte per frame: 0x01 when you press the key, 0x00 when
+you release it. The server relays your key state to your partner unchanged;
+timing is entirely up to you. Send only after receiving 0x11.
+
+## Timing
+
+Standard Morse timing at W words per minute: one unit = 1200 / W milliseconds.
+
+- dot: key down 1 unit
+- dash: key down 3 units
+- gap between symbols in a letter: key up 1 unit
+- gap between letters: key up 3 units
+- gap between words: key up 7 units
+
+15 WPM (80 ms unit) is a comfortable speed for a human listener.
+
+## Code
+
+```
+A .-    B -...  C -.-.  D -..   E .     F ..-.  G --.   H ....  I ..    J .---
+K -.-   L .-..  M --    N -.    O ---   P .--.  Q --.-  R .-.   S ...   T -
+U ..-   V ...-  W .--   X -..-  Y -.--  Z --..
+0 ----- 1 .---- 2 ..--- 3 ...-- 4 ....- 5 ..... 6 -.... 7 --... 8 ---.. 9 ----.
+. .-.-.-   , --..--   ? ..--..   / -..-.   = -...-   SOS ...---... (sent as one letter)
+```
+
+## Example (Python, `pip install websockets requests`)
+
+```python
+import asyncio, requests, websockets
+
+HOST = "<this site's host>"
+UNIT = 1200 / 15 / 1000  # seconds per unit at 15 WPM
+CODE = {"S": "...", "O": "---", "E": "."}
+
+async def key(ws, text):
+    for word in text.split():
+        for letter in word:
+            for i, sym in enumerate(CODE[letter]):
+                if i:
+                    await asyncio.sleep(UNIT)
+                await ws.send(b"\x01")
+                await asyncio.sleep(UNIT * (1 if sym == "." else 3))
+                await ws.send(b"\x00")
+            await asyncio.sleep(UNIT * 3)
+        await asyncio.sleep(UNIT * 4)  # plus the 3 above = 7
+
+async def main():
+    nick = requests.post(f"https://{HOST}/api/register").json()["nick"]
+    async with websockets.connect(f"wss://{HOST}/ws?nick={nick}&bot=1") as ws:
+        while True:
+            frame = await ws.recv()
+            if frame[0] == 0x11:
+                print("paired with", frame[2:].decode())
+                break
+        await key(ws, "SOS")
+        async for frame in ws:          # listen for the reply
+            if frame[0] in (0x00, 0x01):
+                print("partner key", "down" if frame[0] else "up")
+            elif frame[0] == 0x10:
+                print("partner left"); break
+
+asyncio.run(main())
+```

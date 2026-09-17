@@ -53,7 +53,8 @@ func expect(t *testing.T, c *client, want []byte) {
 	}
 }
 
-func paired(nick string) []byte { return append([]byte{opPaired}, nick...) }
+func paired(nick string) []byte    { return append([]byte{opPaired, 0}, nick...) }
+func pairedBot(nick string) []byte { return append([]byte{opPaired, flagBot}, nick...) }
 
 // The exact sequence from the spec:
 // A joins -> waits; B joins -> A+B; C joins -> waits; B leaves -> A+C;
@@ -155,4 +156,16 @@ func TestHubBroadcastsOnlineCount(t *testing.T) {
 	h.unregister <- a
 	expectAny(t, b, []byte{opWaiting})
 	expectAny(t, b, online(1))
+}
+
+func TestHubFlagsBotPartner(t *testing.T) {
+	h := newHub()
+	go h.run()
+	human, bot := fakeClient("H"), fakeClient("B")
+	bot.bot = true
+	h.register <- human
+	h.register <- bot
+	expect(t, human, []byte{opWaiting})
+	expect(t, human, pairedBot("B"))
+	expect(t, bot, paired("H"))
 }

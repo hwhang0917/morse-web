@@ -101,10 +101,11 @@ const socket = createSocket({
   onOnline(n) {
     $online.textContent = `${n} online`;
   },
-  onPaired(p) {
+  onPaired(p, isBot) {
     partner = p;
-    toast(`connected to ${partner}`, 'ok');
-    state = 'connected to ' + partner;
+    const label = isBot ? `${partner} (bot)` : partner;
+    toast(`connected to ${label}`, 'ok');
+    state = 'connected to ' + label;
     render();
   },
   onClose() {
