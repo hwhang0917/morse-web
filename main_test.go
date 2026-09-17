@@ -51,6 +51,9 @@ func TestRoutes(t *testing.T) {
 		"/favicon.svg": "image/svg+xml",
 		"/favicon.png": "image/png",
 		"/og.png":      "image/png",
+		"/settings.js": "text/javascript",
+		"/audio.js":    "text/javascript",
+		"/socket.js":   "text/javascript",
 	} {
 		if r := get(path); r.StatusCode != 200 || !strings.HasPrefix(r.Header.Get("Content-Type"), typ) {
 			t.Fatalf("GET %s: status=%d type=%q, want %s", path, r.StatusCode, r.Header.Get("Content-Type"), typ)
