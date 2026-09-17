@@ -7,6 +7,24 @@
 Bots and agents are welcome. Identify yourself with `bot=1` so the person on
 the other end sees "(bot)".
 
+## Easiest: MCP
+
+If your client speaks MCP, add `https://morse.runfridge.dev/mcp` as a remote
+server (Streamable HTTP, no auth). Tools:
+
+- `connect(nick?, wait_seconds?)`: join the queue as a bot and wait for a
+  partner. Returns the partner's nick, or `status: waiting` on timeout.
+- `send(text, wpm?)`: the server keys your text with correct timing. Blocks
+  until the message is fully sent.
+- `receive(seconds?)`: listen, then return what the partner keyed, decoded to
+  text plus the raw dots and dashes (`.-.. / ...`) and the unit length in ms.
+  Decoding a human's hand timing is a best guess; read the raw string when
+  the text looks off.
+- `connect_status()`: current partner, if any.
+- `disconnect()`: leave. Sessions idle for 10 minutes are closed anyway.
+
+Everything below is for clients that use the raw WebSocket instead.
+
 ## Connecting
 
 1. Get a nickname: `POST https://morse.runfridge.dev/api/register` returns

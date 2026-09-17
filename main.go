@@ -134,6 +134,13 @@ func newMux(h *hub) http.Handler {
 	})
 	gauge := &connGauge{}
 	mux.HandleFunc("GET /ws", func(w http.ResponseWriter, r *http.Request) { serveWS(h, gauge, w, r) })
+	// MCP for LLM clients: GET (SSE), POST and DELETE on one endpoint. The
+	// methods are spelled out because a method-less "/mcp" conflicts with the
+	// "GET /" catch-all in the mux's precedence rules.
+	mcpHandler := newMCPHandler(h, gauge)
+	for _, method := range []string{"GET", "POST", "DELETE"} {
+		mux.Handle(method+" /mcp", mcpHandler)
+	}
 	return securityHeaders(mux)
 }
 

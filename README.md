@@ -31,8 +31,9 @@ docker compose up -d        # pulls ghcr.io/hwhang0917/morse-web:latest
 | `POST /api/register` | issue a nickname |
 | `GET /api/status` | waiting / paired counts |
 | `GET /version` | version string |
+| `/mcp` | MCP server for LLM clients: connect, send, receive, disconnect |
 
-Bots and agents: the full wire protocol, Morse timing and a Python example are in [`/llms.txt`](web/static/llms.txt).
+Bots and agents: add `/mcp` as a remote MCP server and use the `connect`, `send` and `receive` tools; the server keys and decodes for you. The raw wire protocol, Morse timing and a Python example are in [`/llms.txt`](web/static/llms.txt).
 
 ## Release
 
