@@ -55,9 +55,11 @@ body.rx { background: #23305a; }
 #menu { position: fixed; top: 1rem; right: 1rem; z-index: 10; }
 #menu summary {
   list-style: none; cursor: pointer; font-size: 1.6rem; line-height: 1; padding: .3rem .5rem;
-  user-select: none; -webkit-tap-highlight-color: transparent;
+  user-select: none; -webkit-tap-highlight-color: transparent; position: relative; z-index: 1;
 }
 #menu summary::-webkit-details-marker { display: none; }
+#menu summary::before { content: "☰"; }
+#menu[open] summary::before { content: "✕"; }
 #menu > div {
   position: absolute; right: 0; margin-top: .3rem; min-width: 16rem; padding: .9rem 1rem;
   background: #2a2a2a; border: 1px solid #555; border-radius: .5rem; display: grid; gap: .8rem;
@@ -78,12 +80,24 @@ body.rx { background: #23305a; }
 #menu input[type="checkbox"]:checked::before { left: 1.35rem; }
 #menu label::after { content: "OFF"; width: 2rem; font-size: .75rem; font-weight: 600; opacity: .5; }
 #menu label:has(:checked)::after { content: "ON"; color: var(--accent); opacity: 1; }
+
+/* Phones: the panel becomes a right-hand drawer with a dimmed backdrop. */
+@media (max-width: 600px) {
+  #menu[open]::before { content: ""; position: fixed; inset: 0; background: rgba(0, 0, 0, .55); }
+  #menu > div {
+    position: fixed; top: 0; right: 0; bottom: 0; margin: 0; width: min(80vw, 20rem);
+    border: none; border-left: 1px solid #555; border-radius: 0;
+    padding: 4.5rem 1.2rem 1.2rem; align-content: start; font-size: 1.05rem;
+    animation: slide-in .2s ease-out;
+  }
+  @keyframes slide-in { from { transform: translateX(100%); } }
+}
 #menu button { padding: .5rem; background: #333; color: #ddd; border: 1px solid #555; border-radius: .3rem; cursor: pointer; }
 </style>
 </head>
 <body>
 <details id="menu">
-  <summary aria-label="Settings">☰</summary>
+  <summary aria-label="Settings"></summary>
   <div>
     <label>Sound <input type="checkbox" data-setting="sound"></label>
     <label id="vib" hidden>Vibrate on incoming <input type="checkbox" data-setting="vibrate"></label>
@@ -118,9 +132,10 @@ const $key = document.getElementById('key');
 const $toast = document.getElementById('toast');
 const $menu = document.getElementById('menu');
 
-// Tapping anywhere outside the menu closes it.
+// Tapping anywhere outside the panel closes it. The drawer backdrop is a
+// pseudo-element of #menu itself, so test against the panel and summary only.
 document.addEventListener('pointerdown', e => {
-  if ($menu.open && !e.target.closest('#menu')) $menu.open = false;
+  if ($menu.open && !e.target.closest('#menu > div, #menu summary')) $menu.open = false;
 });
 
 let toastTimer;
