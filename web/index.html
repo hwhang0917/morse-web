@@ -5,16 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Morse</title>
 <style>
-:root { color-scheme: dark; }
+:root { color-scheme: dark; --accent: #e8b23a; }
 html, body { height: 100%; margin: 0; }
 body {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.5rem;
   background: #111; color: #ddd; font-family: system-ui, sans-serif; transition: background .05s;
 }
-#nick { font-size: 1.1rem; opacity: .8; }
+#nick { font-size: 1.2rem; }
+#nick .name { color: var(--accent); font-weight: 600; }
+#nick .tag { opacity: .5; font-size: .9em; }
 #status { min-height: 1.4em; }
-#vib { font-size: .9rem; opacity: .8; }
-#vib[hidden] { display: none; }
 #key {
   width: min(60vw, 60vh); aspect-ratio: 1; border-radius: 50%; border: none;
   background: #333; color: #ccc; font-size: 1.5rem; letter-spacing: .2em; cursor: pointer;
@@ -22,15 +22,38 @@ body {
   -webkit-tap-highlight-color: transparent;
   transition: background .05s;
 }
-body.tx #key { background: #e8b23a; color: #111; }
+body.tx #key { background: var(--accent); color: #111; }
 body.rx { background: #23305a; }
+
+/* Native collapsible: no JS needed for open/close. */
+#menu { position: fixed; top: 1rem; right: 1rem; }
+#menu summary {
+  list-style: none; cursor: pointer; font-size: 1.6rem; line-height: 1; padding: .3rem .5rem;
+  user-select: none; -webkit-tap-highlight-color: transparent;
+}
+#menu summary::-webkit-details-marker { display: none; }
+#menu > div {
+  position: absolute; right: 0; margin-top: .3rem; min-width: 13rem; padding: .8rem 1rem;
+  background: #222; border: 1px solid #444; border-radius: .5rem; display: grid; gap: .7rem;
+}
+#menu label { display: flex; align-items: center; gap: .6rem; cursor: pointer; }
+#menu label[hidden] { display: none; }
+#menu button { padding: .5rem; background: #333; color: #ddd; border: 1px solid #555; border-radius: .3rem; cursor: pointer; }
 </style>
 </head>
 <body>
-<div id="nick"></div>
+<details id="menu">
+  <summary aria-label="Settings">☰</summary>
+  <div>
+    <label><input type="checkbox" data-setting="sound"> Sound</label>
+    <label id="vib" hidden><input type="checkbox" data-setting="vibrate"> Vibrate on incoming</label>
+    <label><input type="checkbox" data-setting="flash"> Flash screen on incoming</label>
+    <button id="newnick" type="button">New nickname</button>
+  </div>
+</details>
+<div id="nick"><span class="name"></span> <span class="tag"></span></div>
 <div id="status">connecting…</div>
 <button id="key" aria-label="Morse key">KEY</button>
-<label id="vib" hidden><input type="checkbox"> vibrate on incoming</label>
 <script>
 'use strict';
 const RECONNECT_MS = 2000, TONE_LOCAL_HZ = 600, TONE_REMOTE_HZ = 700, RAMP_S = 0.005;
@@ -38,14 +61,51 @@ const RECONNECT_MS = 2000, TONE_LOCAL_HZ = 600, TONE_REMOTE_HZ = 700, RAMP_S = 0
 // start can be lost (the buzz is started asynchronously by the OS), so "hold"
 // is a train of short pulses: a lost cancel overshoots by one pulse, not seconds.
 const VIBRATE_PULSE_MS = 100, VIBRATE_REISSUE_MS = 80;
+const NICK_COOKIE_MAX_AGE_S = 365 * 24 * 3600;
 const OP = { KEY_UP: 0x00, KEY_DOWN: 0x01, WAITING: 0x10, PAIRED: 0x11 };
+// Mirrors nickRE on the server; a stale cookie that fails it would 400 forever.
+const NICK_RE = /^[a-z]{1,20}_[a-z]{1,20}_[a-z0-9]{4}$/;
+// Flash is off by default: a full-screen strobe is a seizure risk.
+const DEFAULT_SETTINGS = { sound: true, vibrate: false, flash: false };
 
-const $nick = document.getElementById('nick');
+const $name = document.querySelector('#nick .name');
+const $tag = document.querySelector('#nick .tag');
 const $status = document.getElementById('status');
 const $key = document.getElementById('key');
-const $vib = document.querySelector('#vib input');
-if (navigator.vibrate) $vib.parentElement.hidden = false;
-$vib.addEventListener('change', () => { if (!$vib.checked) vibrate(false); });
+
+// ---- settings (localStorage) ----
+function loadSettings() {
+  try { return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem('settings')) }; }
+  catch { return { ...DEFAULT_SETTINGS }; }
+}
+const settings = loadSettings();
+function saveSettings() {
+  try { localStorage.setItem('settings', JSON.stringify(settings)); } catch {}
+}
+if (navigator.vibrate) document.getElementById('vib').hidden = false;
+for (const box of document.querySelectorAll('[data-setting]')) {
+  const key = box.dataset.setting;
+  box.checked = settings[key];
+  box.addEventListener('change', () => {
+    settings[key] = box.checked;
+    saveSettings();
+    // Turning something off mid-signal must also stop the signal.
+    if (!box.checked) { if (key === 'sound') { localTone(false); remoteTone(false); } if (key === 'vibrate') vibrate(false); if (key === 'flash') document.body.classList.remove('rx'); }
+    render();
+  });
+}
+
+// ---- audio: always-running oscillators gated by gain, so on/off is click-free.
+// The remote pitch differs so you can tell who is keying. ----
+const ac = new AudioContext();
+function tone(hz) {
+  const osc = new OscillatorNode(ac, { frequency: hz });
+  const gain = new GainNode(ac, { gain: 0 });
+  osc.connect(gain).connect(ac.destination);
+  osc.start();
+  return on => gain.gain.setTargetAtTime(on && settings.sound ? 1 : 0, ac.currentTime, RAMP_S);
+}
+const localTone = tone(TONE_LOCAL_HZ), remoteTone = tone(TONE_REMOTE_HZ);
 
 let vibTimer = null;
 function vibrate(on) {
@@ -56,29 +116,26 @@ function vibrate(on) {
   vibTimer = setInterval(() => navigator.vibrate(VIBRATE_PULSE_MS), VIBRATE_REISSUE_MS);
 }
 
-// Two always-running oscillators gated by gain, so on/off is click-free.
-// The remote pitch differs so you can tell who is keying.
-const ac = new AudioContext();
-function tone(hz) {
-  const osc = new OscillatorNode(ac, { frequency: hz });
-  const gain = new GainNode(ac, { gain: 0 });
-  osc.connect(gain).connect(ac.destination);
-  osc.start();
-  return on => gain.gain.setTargetAtTime(on ? 1 : 0, ac.currentTime, RAMP_S);
-}
-const localTone = tone(TONE_LOCAL_HZ), remoteTone = tone(TONE_REMOTE_HZ);
-
-let ws, state = 'connecting…', down = false;
+// ---- state ----
+let ws, retryTimer, nick = '', state = 'connecting…', down = false;
 
 function render() {
-  $status.textContent = state + (ac.state === 'running' ? '' : ' · tap the key to enable audio');
+  const needAudio = settings.sound && ac.state !== 'running';
+  $status.textContent = state + (needAudio ? ' · tap the key to enable audio' : '');
 }
 ac.onstatechange = render;
 
+function showNick() {
+  // sleepy_beaver_jf34 -> "sleepy_beaver" highlighted, "(jf34)" dimmed.
+  const i = nick.lastIndexOf('_');
+  $name.textContent = nick.slice(0, i);
+  $tag.textContent = '(' + nick.slice(i + 1) + ')';
+}
+
 function rx(on) {
   remoteTone(on);
-  if ($vib.checked) vibrate(on);
-  document.body.classList.toggle('rx', on);
+  if (settings.vibrate) vibrate(on);
+  if (settings.flash) document.body.classList.toggle('rx', on);
 }
 
 // Only transitions are sent, which guards multi-touch and the keyboard path.
@@ -95,7 +152,7 @@ $key.addEventListener('pointerup', () => setKey(false));
 $key.addEventListener('pointercancel', () => setKey(false));
 $key.addEventListener('contextmenu', e => e.preventDefault());
 window.addEventListener('keydown', e => {
-  if (e.code !== 'Space' || e.repeat) return;
+  if (e.code !== 'Space' || e.repeat || e.target.closest('#menu')) return;
   e.preventDefault();
   ac.resume();
   setKey(true);
@@ -105,21 +162,24 @@ window.addEventListener('keyup', e => { if (e.code === 'Space') setKey(false); }
 window.addEventListener('blur', () => setKey(false));
 document.addEventListener('visibilitychange', () => { if (document.hidden) setKey(false); });
 
-async function getNick() {
-  let nick = sessionStorage.getItem('nick');
-  if (!nick) {
-    const r = await fetch('/api/register', { method: 'POST' });
-    nick = (await r.json()).nick;
-    sessionStorage.setItem('nick', nick);
-  }
-  return nick;
+// ---- nickname (cookie, so it survives closing the tab) ----
+function cookieNick() {
+  const m = document.cookie.match(/(?:^|; )nick=([^;]*)/);
+  return m && NICK_RE.test(m[1]) ? m[1] : '';
+}
+async function registerNick() {
+  const r = await fetch('/api/register', { method: 'POST' });
+  const n = (await r.json()).nick;
+  document.cookie = `nick=${n}; Max-Age=${NICK_COOKIE_MAX_AGE_S}; Path=/; SameSite=Lax`;
+  return n;
 }
 
-function connect(nick) {
+// ---- socket ----
+function connect() {
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${scheme}://${location.host}/ws?nick=${nick}`);
-  ws.binaryType = 'arraybuffer';
-  ws.onmessage = e => {
+  const sock = new WebSocket(`${scheme}://${location.host}/ws?nick=${nick}`);
+  sock.binaryType = 'arraybuffer';
+  sock.onmessage = e => {
     const b = new Uint8Array(e.data);
     switch (b[0]) {
       case OP.KEY_DOWN: rx(true); return;
@@ -129,20 +189,35 @@ function connect(nick) {
     }
     render();
   };
-  ws.onclose = () => {
+  sock.onclose = () => {
     rx(false);
     setKey(false);
     state = 'disconnected, retrying…';
     render();
-    setTimeout(() => connect(nick), RECONNECT_MS);
+    retryTimer = setTimeout(connect, RECONNECT_MS);
   };
+  ws = sock;
 }
 
-getNick().then(nick => {
-  $nick.textContent = nick;
-  connect(nick);
+document.getElementById('newnick').addEventListener('click', async () => {
+  nick = await registerNick();
+  showNick();
+  // Drop the old socket without triggering its retry; connect fresh with the new nick.
+  clearTimeout(retryTimer);
+  ws.onclose = null;
+  ws.close();
+  rx(false);
+  state = 'connecting…';
   render();
+  connect();
 });
+
+(async () => {
+  nick = cookieNick() || await registerNick();
+  showNick();
+  render();
+  connect();
+})();
 </script>
 </body>
 </html>
