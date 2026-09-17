@@ -34,7 +34,7 @@ var rawIndexHTML []byte
 // the host is only known when a request arrives.
 var indexHTML = bytes.ReplaceAll(rawIndexHTML, []byte("{{VERSION}}"), []byte(version))
 
-//go:embed web/static
+//go:embed all:web/static
 var staticFS embed.FS
 
 //go:embed web/404.html
@@ -103,16 +103,18 @@ func newMux(h *hub) http.Handler {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write(bytes.ReplaceAll(indexHTML, []byte("{{ORIGIN}}"), []byte(origin(r))))
 	})
-	// One route per embedded static file (favicon, robots.txt, og image), so
-	// the catch-all 404 below still owns every other path.
+	// One route per embedded static file (favicon, robots.txt, og image,
+	// .well-known/*), so the catch-all 404 below still owns every other path.
 	static, _ := fs.Sub(staticFS, "web/static")
-	entries, _ := fs.ReadDir(static, ".")
-	for _, e := range entries {
-		name := e.Name()
+	fs.WalkDir(static, ".", func(name string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
 		mux.HandleFunc("GET /"+name, func(w http.ResponseWriter, r *http.Request) {
 			http.ServeFileFS(w, r, static, name)
 		})
-	}
+		return nil
+	})
 	// Designated 404 page for every other GET. Not served via http.FS because
 	// that would force a 200.
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
