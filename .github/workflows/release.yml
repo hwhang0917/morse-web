@@ -8,6 +8,11 @@ permissions:
   contents: write
   packages: write
 
+# Runs for different tags must not interleave, or an older tag's release job
+# can finish last and steal the moving tags.
+concurrency:
+  group: release
+
 env:
   IMAGE: ghcr.io/${{ github.repository }}
 
@@ -77,14 +82,25 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Only the highest version tag may move "latest" and "major.minor";
+      # re-running an older tag must not roll them back.
+      - id: highest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          top=$(gh api "repos/$GITHUB_REPOSITORY/tags" --paginate --jq '.[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          echo "top tag is $top, this tag is $GITHUB_REF_NAME"
+          echo "is=$([ "$top" = "$GITHUB_REF_NAME" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
       - id: meta
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.IMAGE }}
+          flavor: latest=false
           tags: |
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
+            type=semver,pattern={{major}}.{{minor}},enable=${{ steps.highest.outputs.is }}
+            type=raw,value=latest,enable=${{ steps.highest.outputs.is }}
 
       - name: Create manifest
         working-directory: /tmp/digests
