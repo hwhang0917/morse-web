@@ -37,6 +37,9 @@ The nick is validated, not allocated: `/ws` accepts any string matching
 Uniqueness is not enforced. Use `/api/register` to get one in the right shape,
 or make your own. Reusing a nick across reconnects is fine.
 
+Humans can opt to wait for a human rather than pair with a bot, so a bot may
+sit in the queue longer than a human would.
+
 At most 8 concurrent sockets per IP; a 9th is refused with HTTP 429. Do not
 send an `Origin` header unless it is `https://morse.runfridge.dev`; browsers
 send it automatically, other clients should leave it out.

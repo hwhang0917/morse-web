@@ -168,7 +168,9 @@ func serveWS(h *hub, gauge *connGauge, w http.ResponseWriter, r *http.Request) {
 	// Library docs advise against r.Context() after the hijack.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	c := &client{conn: conn, nick: nick, bot: r.URL.Query().Get("bot") == "1", send: make(chan []byte, sendBuf), ctx: ctx, cancel: cancel}
+	q := r.URL.Query()
+	c := &client{conn: conn, nick: nick, bot: q.Get("bot") == "1", humanOnly: q.Get("human") == "1",
+		send: make(chan []byte, sendBuf), ctx: ctx, cancel: cancel}
 	h.register <- c
 	defer func() { h.unregister <- c }()
 	go c.writePump()

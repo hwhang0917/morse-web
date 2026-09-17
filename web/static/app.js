@@ -53,8 +53,24 @@ bindSettings((key, on) => {
     if (key === 'vibrate') vibrate(false);
     if (key === 'flash') document.body.classList.remove('rx');
   }
+  // The match rule lives on the server, so changing it means re-queueing.
+  if (key === 'human') reconnect();
   render();
 });
+
+function socketParams() {
+  return settings.human ? { human: '1' } : {};
+}
+
+// Drop the current socket and join the queue again with the current nick and settings.
+function reconnect() {
+  socket.stop();
+  rx(false);
+  partner = '';
+  state = 'connecting…';
+  render();
+  socket.connect(nick, socketParams());
+}
 
 // ---- incoming signal ----
 function rx(on) {
@@ -122,17 +138,12 @@ document.getElementById('newnick').addEventListener('click', async () => {
   try { nick = await registerNick(); }
   catch { toast('too many nickname requests, try again later', 'bad'); return; }
   showNick();
-  socket.stop();
-  rx(false);
-  partner = '';
-  state = 'connecting…';
-  render();
-  socket.connect(nick);
+  reconnect();
 });
 
 (async () => {
   nick = cookieNick() || await registerNick();
   showNick();
   render();
-  socket.connect(nick);
+  socket.connect(nick, socketParams());
 })();

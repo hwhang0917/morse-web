@@ -26,12 +26,16 @@ export async function registerNick() {
 // called. Handlers: onKey(down), onWaiting(), onPaired(partnerNick, isBot),
 // onOnline(count), onClose().
 export function createSocket({ onKey, onWaiting, onPaired, onOnline, onClose }) {
-  let ws, retryTimer, nick;
+  let ws, retryTimer, nick, params = {};
 
-  function connect(newNick) {
+  // connect(nick, params) starts a fresh connection; connect() with no
+  // arguments reconnects with the same nick and params.
+  function connect(newNick, newParams) {
     if (newNick !== undefined) nick = newNick;
+    if (newParams !== undefined) params = newParams;
     const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
-    const sock = new WebSocket(`${scheme}://${location.host}/ws?nick=${nick}`);
+    const query = new URLSearchParams({ nick, ...params });
+    const sock = new WebSocket(`${scheme}://${location.host}/ws?${query}`);
     sock.binaryType = 'arraybuffer';
     sock.onmessage = e => {
       const b = new Uint8Array(e.data);

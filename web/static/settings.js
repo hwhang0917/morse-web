@@ -1,7 +1,7 @@
 // Settings persisted in localStorage.
 
 // Flash is off by default: a full-screen strobe is a seizure risk.
-const DEFAULT_SETTINGS = { sound: true, vibrate: false, flash: false };
+const DEFAULT_SETTINGS = { sound: true, vibrate: false, flash: false, human: false };
 const STORAGE_KEY = 'settings';
 
 function load() {

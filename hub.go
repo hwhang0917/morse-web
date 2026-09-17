@@ -34,12 +34,14 @@ const (
 )
 
 type client struct {
-	conn   *websocket.Conn
-	nick   string
-	bot    bool
-	send   chan []byte // closed only by the hub
-	ctx    context.Context
-	cancel context.CancelFunc
+	conn *websocket.Conn
+	nick string
+	bot  bool
+	// humanOnly clients wait for a human rather than pair with a bot.
+	humanOnly bool
+	send      chan []byte // closed only by the hub
+	ctx       context.Context
+	cancel    context.CancelFunc
 	// partner is owned by the hub goroutine; pumps never touch it.
 	partner *client
 }
@@ -131,16 +133,30 @@ func (h *hub) broadcastOnline() {
 	}
 }
 
-// enqueue pairs c with the longest-waiting client, or parks c in the queue.
+// compatible reports whether a and b may be paired: nobody who asked for a
+// human gets a bot.
+func compatible(a, b *client) bool {
+	return !(a.humanOnly && b.bot) && !(b.humanOnly && a.bot)
+}
+
+// enqueue pairs c with the longest-waiting compatible client, or parks c in
+// the queue.
 func (h *hub) enqueue(c *client) {
-	if len(h.waiting) == 0 {
+	i := -1
+	for j, w := range h.waiting {
+		if compatible(c, w) {
+			i = j
+			break
+		}
+	}
+	if i < 0 {
 		h.waiting = append(h.waiting, c)
 		h.nWaiting.Add(1)
 		c.push([]byte{opWaiting})
 		return
 	}
-	p := h.waiting[0]
-	h.waiting = h.waiting[1:]
+	p := h.waiting[i]
+	h.waiting = append(h.waiting[:i], h.waiting[i+1:]...)
 	h.nWaiting.Add(-1)
 	c.partner, p.partner = p, c
 	h.nPaired.Add(2)

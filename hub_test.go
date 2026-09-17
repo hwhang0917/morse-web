@@ -169,3 +169,32 @@ func TestHubFlagsBotPartner(t *testing.T) {
 	expect(t, human, pairedBot("B"))
 	expect(t, bot, paired("H"))
 }
+
+// A client that prefers humans is never paired with a bot, in either order,
+// and pairing stays FIFO among compatible clients.
+func TestHubPreferHumanSkipsBots(t *testing.T) {
+	h := newHub()
+	go h.run()
+
+	picky := fakeClient("P")
+	picky.humanOnly = true
+	bot := fakeClient("B")
+	bot.bot = true
+	human := fakeClient("H")
+	anyone := fakeClient("A")
+
+	h.register <- picky
+	expect(t, picky, []byte{opWaiting})
+	h.register <- bot
+	expect(t, bot, []byte{opWaiting}) // not paired with picky
+	h.register <- human
+	expect(t, picky, paired("H")) // picky was first in line among compatible
+	expect(t, human, paired("P"))
+	h.register <- anyone
+	expect(t, anyone, pairedBot("B")) // the bot is still first in the queue
+	expect(t, bot, paired("A"))
+
+	if w := h.nWaiting.Load(); w != 0 {
+		t.Fatalf("waiting=%d, want 0", w)
+	}
+}
