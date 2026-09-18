@@ -5,9 +5,7 @@ import (
 	"time"
 )
 
-// Morse encoding and decoding, used by the MCP tools so an agent can send
-// text and read what a human keys back. The browser never uses this: humans
-// key by hand.
+// Used by the MCP tools only; humans key by hand in the browser.
 
 var morseCode = map[rune]string{
 	'A': ".-", 'B': "-...", 'C': "-.-.", 'D': "-..", 'E': ".", 'F': "..-.", 'G': "--.",
@@ -20,11 +18,11 @@ var morseCode = map[rune]string{
 }
 
 var morseText = func() map[string]rune {
-	m := make(map[string]rune, len(morseCode))
-	for r, c := range morseCode {
-		m[c] = r
+	table := make(map[string]rune, len(morseCode))
+	for letter, code := range morseCode {
+		table[code] = letter
 	}
-	return m
+	return table
 }()
 
 // Standard timing: dot 1 unit, dash 3, symbol gap 1, letter gap 3, word gap 7.
@@ -32,8 +30,7 @@ const (
 	dashUnits      = 3
 	letterGapUnits = 3
 	wordGapUnits   = 7
-	// One unit at W words per minute is 1200/W ms (the PARIS convention).
-	unitMsPerWPM = 1200
+	unitMsPerWPM   = 1200 // PARIS convention: one unit at W words per minute is 1200/W ms
 )
 
 func morseUnit(wpm int) time.Duration {
@@ -46,33 +43,33 @@ type keyStep struct {
 }
 
 // keyPlan turns text into timed key states. Characters without a code are
-// skipped. The plan always ends with the key up.
+// skipped and the plan always ends with the key up.
 func keyPlan(text string, wpm int) []keyStep {
 	unit := morseUnit(wpm)
 	var plan []keyStep
-	for wi, word := range strings.Fields(strings.ToUpper(text)) {
-		if wi > 0 {
+	for wordIndex, word := range strings.Fields(strings.ToUpper(text)) {
+		if wordIndex > 0 {
 			plan = append(plan, keyStep{false, wordGapUnits * unit})
 		}
 		letters := 0
-		for _, r := range word {
-			code, ok := morseCode[r]
-			if !ok {
+		for _, letter := range word {
+			code, known := morseCode[letter]
+			if !known {
 				continue
 			}
 			if letters > 0 {
 				plan = append(plan, keyStep{false, letterGapUnits * unit})
 			}
 			letters++
-			for si, s := range code {
-				if si > 0 {
+			for symbolIndex, symbol := range code {
+				if symbolIndex > 0 {
 					plan = append(plan, keyStep{false, unit})
 				}
-				d := unit
-				if s == '-' {
-					d = dashUnits * unit
+				duration := unit
+				if symbol == '-' {
+					duration = dashUnits * unit
 				}
-				plan = append(plan, keyStep{true, d})
+				plan = append(plan, keyStep{true, duration})
 			}
 		}
 	}
@@ -84,68 +81,63 @@ type keyEvent struct {
 	at   time.Time
 }
 
-// decodeMorse classifies a human's key timings into text. The unit is taken
-// from the shortest press or gap seen, then presses over 2 units are dashes,
-// gaps over 2 units end a letter and gaps over 5 units end a word. Unknown
-// patterns decode to '?'; raw keeps the dots and dashes for the caller.
-// ponytail: min-based unit estimate; a lone dash with no gaps decodes as a
-// dot. Fine for conversation, use a clustering pass if it ever matters.
-func decodeMorse(ev []keyEvent) (text, raw string, unit time.Duration) {
-	type run struct {
+// decodeMorse classifies a human's key timings into text. The unit is the
+// shortest press or gap seen; presses over 2 units are dashes, gaps over 2
+// units end a letter and gaps over 5 end a word. Unknown patterns become '?'.
+// ponytail: min-based unit estimate, so a lone dash with no gaps decodes as
+// a dot. Fine for conversation; use a clustering pass if it ever matters.
+func decodeMorse(events []keyEvent) (text, raw string, unit time.Duration) {
+	type segment struct {
 		down bool
 		dur  time.Duration
 	}
-	var runs []run
-	for i := 1; i < len(ev); i++ {
-		if ev[i].down == ev[i-1].down {
-			continue // duplicate transition; ignore
+	var segments []segment
+	for index := 1; index < len(events); index++ {
+		previous, current := events[index-1], events[index]
+		if current.down == previous.down {
+			continue
 		}
-		runs = append(runs, run{ev[i-1].down, ev[i].at.Sub(ev[i-1].at)})
+		segments = append(segments, segment{previous.down, current.at.Sub(previous.at)})
 	}
-	for _, r := range runs {
-		if r.dur > 0 && (unit == 0 || r.dur < unit) {
-			unit = r.dur
+	for _, seg := range segments {
+		if seg.dur > 0 && (unit == 0 || seg.dur < unit) {
+			unit = seg.dur
 		}
 	}
 	if unit == 0 {
 		return "", "", 0
 	}
 
-	var out, rawB strings.Builder
-	var letter strings.Builder
-	flush := func() {
+	var textOut, rawOut, letter strings.Builder
+	endLetter := func() {
 		if letter.Len() == 0 {
 			return
 		}
-		if r, ok := morseText[letter.String()]; ok {
-			out.WriteRune(r)
+		if decoded, known := morseText[letter.String()]; known {
+			textOut.WriteRune(decoded)
 		} else {
-			out.WriteByte('?')
+			textOut.WriteByte('?')
 		}
 		letter.Reset()
 	}
-	for _, r := range runs {
-		units := float64(r.dur) / float64(unit)
-		if r.down {
-			if units > 2 {
-				letter.WriteByte('-')
-				rawB.WriteByte('-')
-			} else {
-				letter.WriteByte('.')
-				rawB.WriteByte('.')
-			}
-			continue
-		}
+	for _, seg := range segments {
+		units := float64(seg.dur) / float64(unit)
 		switch {
+		case seg.down && units > 2:
+			letter.WriteByte('-')
+			rawOut.WriteByte('-')
+		case seg.down:
+			letter.WriteByte('.')
+			rawOut.WriteByte('.')
 		case units > 5:
-			flush()
-			out.WriteByte(' ')
-			rawB.WriteString(" / ")
+			endLetter()
+			textOut.WriteByte(' ')
+			rawOut.WriteString(" / ")
 		case units > 2:
-			flush()
-			rawB.WriteByte(' ')
+			endLetter()
+			rawOut.WriteByte(' ')
 		}
 	}
-	flush()
-	return strings.TrimSpace(out.String()), strings.TrimSpace(rawB.String()), unit
+	endLetter()
+	return strings.TrimSpace(textOut.String()), strings.TrimSpace(rawOut.String()), unit
 }

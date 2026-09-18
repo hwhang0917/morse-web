@@ -12,84 +12,86 @@ import (
 	"github.com/coder/websocket"
 )
 
-// Two real browsers' worth of sockets through the whole stack: pairing
-// frames arrive, a key press is relayed, and leaving re-queues the survivor.
+func wsURL(server *httptest.Server, query string) string {
+	return strings.Replace(server.URL, "http", "ws", 1) + "/ws?" + query
+}
+
 func TestWebSocketEndToEnd(t *testing.T) {
-	h := newHub()
-	go h.run()
-	srv := httptest.NewServer(newMux(h))
-	defer srv.Close()
+	matchmaker := newHub()
+	go matchmaker.run()
+	server := httptest.NewServer(newMux(matchmaker))
+	defer server.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	dial := func(nick string) *websocket.Conn {
+	dial := func(query string) *websocket.Conn {
 		t.Helper()
-		c, _, err := websocket.Dial(ctx, strings.Replace(srv.URL, "http", "ws", 1)+"/ws?nick="+nick, nil)
+		conn, _, err := websocket.Dial(ctx, wsURL(server, query), nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return c
+		return conn
 	}
 	// read skips online-count broadcasts; the hub test covers those.
-	read := func(c *websocket.Conn, want []byte) {
+	read := func(conn *websocket.Conn, want []byte) {
 		t.Helper()
 		for {
-			typ, b, err := c.Read(ctx)
-			if err == nil && typ == websocket.MessageBinary && len(b) > 0 && b[0] == opOnline {
+			kind, frame, err := conn.Read(ctx)
+			if err == nil && kind == websocket.MessageBinary && len(frame) > 0 && frame[0] == opOnline {
 				continue
 			}
-			if err != nil || typ != websocket.MessageBinary || !bytes.Equal(b, want) {
-				t.Fatalf("got %q (%v, err=%v), want %q", b, typ, err, want)
+			if err != nil || kind != websocket.MessageBinary || !bytes.Equal(frame, want) {
+				t.Fatalf("got %q (%v, err=%v), want %q", frame, kind, err, want)
 			}
 			return
 		}
 	}
 
-	a := dial("sleepy_beaver_aaaa")
-	defer a.CloseNow()
-	read(a, []byte{opWaiting})
+	alice := dial("nick=sleepy_beaver_aaaa")
+	defer alice.CloseNow()
+	read(alice, []byte{opWaiting})
 
-	b := dial("brave_otter_bbbb&bot=1")
-	read(a, append([]byte{opPaired, flagBot}, "brave_otter_bbbb"...))
-	read(b, append([]byte{opPaired, 0}, "sleepy_beaver_aaaa"...))
+	bob := dial("nick=brave_otter_bbbb&bot=1")
+	read(alice, append([]byte{opPaired, flagBot}, "brave_otter_bbbb"...))
+	read(bob, append([]byte{opPaired, 0}, "sleepy_beaver_aaaa"...))
 
-	if err := a.Write(ctx, websocket.MessageBinary, keyDown); err != nil {
+	if err := alice.Write(ctx, websocket.MessageBinary, keyDown); err != nil {
 		t.Fatal(err)
 	}
-	read(b, keyDown)
+	read(bob, keyDown)
 
-	b.Close(websocket.StatusNormalClosure, "")
-	read(a, []byte{opWaiting})
+	bob.Close(websocket.StatusNormalClosure, "")
+	read(alice, []byte{opWaiting})
 }
 
 func TestWebSocketPerIPCap(t *testing.T) {
-	h := newHub()
-	go h.run()
-	srv := httptest.NewServer(newMux(h))
-	defer srv.Close()
+	matchmaker := newHub()
+	go matchmaker.run()
+	server := httptest.NewServer(newMux(matchmaker))
+	defer server.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	url := strings.Replace(srv.URL, "http", "ws", 1) + "/ws?nick=sleepy_beaver_aaaa"
+	url := wsURL(server, "nick=sleepy_beaver_aaaa")
 
 	var conns []*websocket.Conn
-	for i := 0; i < maxConnsPerIP; i++ {
-		c, _, err := websocket.Dial(ctx, url, nil)
+	for index := 0; index < maxConnsPerIP; index++ {
+		conn, _, err := websocket.Dial(ctx, url, nil)
 		if err != nil {
-			t.Fatalf("conn %d: %v", i, err)
+			t.Fatalf("conn %d: %v", index, err)
 		}
-		conns = append(conns, c)
+		conns = append(conns, conn)
 	}
 	if _, resp, err := websocket.Dial(ctx, url, nil); err == nil || resp == nil || resp.StatusCode != http.StatusTooManyRequests {
 		t.Fatalf("conn %d should be refused with 429, got err=%v resp=%v", maxConnsPerIP, err, resp)
 	}
 
 	conns[0].Close(websocket.StatusNormalClosure, "")
-	// The slot is released after the server notices the close; retry briefly.
+	// The slot frees once the server notices the close, so retry briefly.
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		c, _, err := websocket.Dial(ctx, url, nil)
+		conn, _, err := websocket.Dial(ctx, url, nil)
 		if err == nil {
-			c.CloseNow()
+			conn.CloseNow()
 			break
 		}
 		if time.Now().After(deadline) {
@@ -97,7 +99,7 @@ func TestWebSocketPerIPCap(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	for _, c := range conns[1:] {
-		c.CloseNow()
+	for _, conn := range conns[1:] {
+		conn.CloseNow()
 	}
 }

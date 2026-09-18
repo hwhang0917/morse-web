@@ -12,160 +12,167 @@ func fakeClient(nick string) *client {
 	return &client{nick: nick, send: make(chan []byte, sendBuf), cancel: func() {}}
 }
 
-// recvAny blocks for the next frame pushed to c, or fails the test.
-func recvAny(t *testing.T, c *client) ([]byte, bool) {
+func recvAny(t *testing.T, peer *client) ([]byte, bool) {
 	t.Helper()
 	select {
-	case b, ok := <-c.send:
-		return b, ok
+	case frame, open := <-peer.send:
+		return frame, open
 	case <-time.After(recvTimeout):
-		t.Fatalf("%s: no frame within %v", c.nick, recvTimeout)
+		t.Fatalf("%s: no frame within %v", peer.nick, recvTimeout)
 		return nil, false
 	}
 }
 
 // recv is recvAny minus online-count broadcasts, which have their own test.
-func recv(t *testing.T, c *client) ([]byte, bool) {
+func recv(t *testing.T, peer *client) ([]byte, bool) {
 	t.Helper()
 	for {
-		b, ok := recvAny(t, c)
-		if !ok || b[0] != opOnline {
-			return b, ok
+		frame, open := recvAny(t, peer)
+		if !open || frame[0] != opOnline {
+			return frame, open
 		}
 	}
 }
 
-func online(n int) []byte { return []byte{opOnline, byte(n >> 8), byte(n)} }
-
-func expectAny(t *testing.T, c *client, want []byte) {
+func expectAny(t *testing.T, peer *client, want []byte) {
 	t.Helper()
-	got, ok := recvAny(t, c)
-	if !ok || !bytes.Equal(got, want) {
-		t.Fatalf("%s: got %q (open=%v), want %q", c.nick, got, ok, want)
+	got, open := recvAny(t, peer)
+	if !open || !bytes.Equal(got, want) {
+		t.Fatalf("%s: got %q (open=%v), want %q", peer.nick, got, open, want)
 	}
 }
 
-func expect(t *testing.T, c *client, want []byte) {
+func expect(t *testing.T, peer *client, want []byte) {
 	t.Helper()
-	got, ok := recv(t, c)
-	if !ok || !bytes.Equal(got, want) {
-		t.Fatalf("%s: got %q (open=%v), want %q", c.nick, got, ok, want)
+	got, open := recv(t, peer)
+	if !open || !bytes.Equal(got, want) {
+		t.Fatalf("%s: got %q (open=%v), want %q", peer.nick, got, open, want)
 	}
 }
 
+func expectClosed(t *testing.T, peer *client) {
+	t.Helper()
+	if _, open := recv(t, peer); open {
+		t.Fatalf("%s: send channel should be closed after leaving", peer.nick)
+	}
+}
+
+func expectCounts(t *testing.T, matchmaker *hub, wantWaiting, wantPaired int32) {
+	t.Helper()
+	waiting, paired := matchmaker.nWaiting.Load(), matchmaker.nPaired.Load()
+	if waiting != wantWaiting || paired != wantPaired {
+		t.Fatalf("counters: waiting=%d paired=%d, want %d/%d", waiting, paired, wantWaiting, wantPaired)
+	}
+}
+
+func online(count int) []byte      { return []byte{opOnline, byte(count >> 8), byte(count)} }
 func paired(nick string) []byte    { return append([]byte{opPaired, 0}, nick...) }
 func pairedBot(nick string) []byte { return append([]byte{opPaired, flagBot}, nick...) }
 
-// The exact sequence from the spec:
-// A joins -> waits; B joins -> A+B; C joins -> waits; B leaves -> A+C;
-// B rejoins -> waits; D joins -> B+D.
+var waitingFrame = []byte{opWaiting}
+
+// The exact sequence from the spec: A joins and waits; B joins and pairs with
+// A; C joins and waits; B leaves so A pairs with C; B rejoins and waits; D
+// joins and pairs with B.
 func TestHubRoundRobin(t *testing.T) {
-	h := newHub()
-	go h.run()
+	matchmaker := newHub()
+	go matchmaker.run()
 
-	a, b, c, d := fakeClient("A"), fakeClient("B"), fakeClient("C"), fakeClient("D")
+	alice, bob, carol, dave := fakeClient("A"), fakeClient("B"), fakeClient("C"), fakeClient("D")
 
-	h.register <- a
-	expect(t, a, []byte{opWaiting})
+	matchmaker.register <- alice
+	expect(t, alice, waitingFrame)
 
-	h.register <- b
-	expect(t, a, paired("B"))
-	expect(t, b, paired("A"))
+	matchmaker.register <- bob
+	expect(t, alice, paired("B"))
+	expect(t, bob, paired("A"))
 
-	h.register <- c
-	expect(t, c, []byte{opWaiting})
+	matchmaker.register <- carol
+	expect(t, carol, waitingFrame)
 
-	h.unregister <- b
-	expect(t, a, paired("C"))
-	expect(t, c, paired("A"))
-	if _, ok := recv(t, b); ok {
-		t.Fatal("B: send channel should be closed after leaving")
-	}
+	matchmaker.unregister <- bob
+	expect(t, alice, paired("C"))
+	expect(t, carol, paired("A"))
+	expectClosed(t, bob)
 
-	b = fakeClient("B")
-	h.register <- b
-	expect(t, b, []byte{opWaiting})
+	bob = fakeClient("B")
+	matchmaker.register <- bob
+	expect(t, bob, waitingFrame)
 
-	h.register <- d
-	expect(t, b, paired("D"))
-	expect(t, d, paired("B"))
+	matchmaker.register <- dave
+	expect(t, bob, paired("D"))
+	expect(t, dave, paired("B"))
 
-	if w, p := h.nWaiting.Load(), h.nPaired.Load(); w != 0 || p != 4 {
-		t.Fatalf("counters: waiting=%d paired=%d, want 0/4", w, p)
-	}
+	expectCounts(t, matchmaker, 0, 4)
 }
 
 func TestHubBothLeave(t *testing.T) {
-	h := newHub()
-	go h.run()
+	matchmaker := newHub()
+	go matchmaker.run()
 
-	a, c, e := fakeClient("A"), fakeClient("C"), fakeClient("E")
-	h.register <- a
-	h.register <- c
-	expect(t, a, []byte{opWaiting})
-	expect(t, a, paired("C"))
-	expect(t, c, paired("A"))
+	alice, carol, eve := fakeClient("A"), fakeClient("C"), fakeClient("E")
+	matchmaker.register <- alice
+	matchmaker.register <- carol
+	expect(t, alice, waitingFrame)
+	expect(t, alice, paired("C"))
+	expect(t, carol, paired("A"))
 
-	h.unregister <- a
-	h.unregister <- c
-	expect(t, c, []byte{opWaiting})
-	if _, ok := recv(t, c); ok {
-		t.Fatal("C: send channel should be closed after leaving")
-	}
+	matchmaker.unregister <- alice
+	matchmaker.unregister <- carol
+	expect(t, carol, waitingFrame)
+	expectClosed(t, carol)
 
-	// Queue must not hold the departed C.
-	h.register <- e
-	expect(t, e, []byte{opWaiting})
-	if w, p := h.nWaiting.Load(), h.nPaired.Load(); w != 1 || p != 0 {
-		t.Fatalf("counters: waiting=%d paired=%d, want 1/0", w, p)
-	}
+	matchmaker.register <- eve
+	expect(t, eve, waitingFrame)
+	expectCounts(t, matchmaker, 1, 0)
 }
 
 func TestHubRelaysKeyToPartner(t *testing.T) {
-	h := newHub()
-	go h.run()
+	matchmaker := newHub()
+	go matchmaker.run()
 
-	a, b := fakeClient("A"), fakeClient("B")
-	h.register <- a
-	h.register <- b
-	expect(t, a, []byte{opWaiting})
-	expect(t, a, paired("B"))
-	expect(t, b, paired("A"))
+	alice, bob := fakeClient("A"), fakeClient("B")
+	matchmaker.register <- alice
+	matchmaker.register <- bob
+	expect(t, alice, waitingFrame)
+	expect(t, alice, paired("B"))
+	expect(t, bob, paired("A"))
 
-	h.relay <- keyMsg{from: a, down: true}
-	expect(t, b, keyDown)
-	h.relay <- keyMsg{from: b, down: false}
-	expect(t, a, keyUp)
+	matchmaker.relay <- keyMsg{from: alice, down: true}
+	expect(t, bob, keyDown)
+	matchmaker.relay <- keyMsg{from: bob, down: false}
+	expect(t, alice, keyUp)
 }
 
 func TestHubBroadcastsOnlineCount(t *testing.T) {
-	h := newHub()
-	go h.run()
+	matchmaker := newHub()
+	go matchmaker.run()
 
-	a, b := fakeClient("A"), fakeClient("B")
-	h.register <- a
-	expectAny(t, a, []byte{opWaiting})
-	expectAny(t, a, online(1))
+	alice, bob := fakeClient("A"), fakeClient("B")
+	matchmaker.register <- alice
+	expectAny(t, alice, waitingFrame)
+	expectAny(t, alice, online(1))
 
-	h.register <- b
-	expectAny(t, a, paired("B"))
-	expectAny(t, b, paired("A"))
-	expectAny(t, a, online(2))
-	expectAny(t, b, online(2))
+	matchmaker.register <- bob
+	expectAny(t, alice, paired("B"))
+	expectAny(t, bob, paired("A"))
+	expectAny(t, alice, online(2))
+	expectAny(t, bob, online(2))
 
-	h.unregister <- a
-	expectAny(t, b, []byte{opWaiting})
-	expectAny(t, b, online(1))
+	matchmaker.unregister <- alice
+	expectAny(t, bob, waitingFrame)
+	expectAny(t, bob, online(1))
 }
 
 func TestHubFlagsBotPartner(t *testing.T) {
-	h := newHub()
-	go h.run()
+	matchmaker := newHub()
+	go matchmaker.run()
+
 	human, bot := fakeClient("H"), fakeClient("B")
 	bot.bot = true
-	h.register <- human
-	h.register <- bot
-	expect(t, human, []byte{opWaiting})
+	matchmaker.register <- human
+	matchmaker.register <- bot
+	expect(t, human, waitingFrame)
 	expect(t, human, pairedBot("B"))
 	expect(t, bot, paired("H"))
 }
@@ -173,8 +180,8 @@ func TestHubFlagsBotPartner(t *testing.T) {
 // A client that prefers humans is never paired with a bot, in either order,
 // and pairing stays FIFO among compatible clients.
 func TestHubPreferHumanSkipsBots(t *testing.T) {
-	h := newHub()
-	go h.run()
+	matchmaker := newHub()
+	go matchmaker.run()
 
 	picky := fakeClient("P")
 	picky.humanOnly = true
@@ -183,18 +190,16 @@ func TestHubPreferHumanSkipsBots(t *testing.T) {
 	human := fakeClient("H")
 	anyone := fakeClient("A")
 
-	h.register <- picky
-	expect(t, picky, []byte{opWaiting})
-	h.register <- bot
-	expect(t, bot, []byte{opWaiting}) // not paired with picky
-	h.register <- human
-	expect(t, picky, paired("H")) // picky was first in line among compatible
+	matchmaker.register <- picky
+	expect(t, picky, waitingFrame)
+	matchmaker.register <- bot
+	expect(t, bot, waitingFrame)
+	matchmaker.register <- human
+	expect(t, picky, paired("H"))
 	expect(t, human, paired("P"))
-	h.register <- anyone
-	expect(t, anyone, pairedBot("B")) // the bot is still first in the queue
+	matchmaker.register <- anyone
+	expect(t, anyone, pairedBot("B"))
 	expect(t, bot, paired("A"))
 
-	if w := h.nWaiting.Load(); w != 0 {
-		t.Fatalf("waiting=%d, want 0", w)
-	}
+	expectCounts(t, matchmaker, 0, 4)
 }

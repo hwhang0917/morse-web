@@ -20,25 +20,25 @@ import (
 
 const defaultAddr = ":8080"
 
-// Embedded at build time; no ldflags to remember across Docker and cross builds.
-//
 //go:embed VERSION
 var rawVersion string
+
 var version = strings.TrimSpace(rawVersion)
 
 //go:embed web/index.html
 var rawIndexHTML []byte
 
-// The page is static, so the version is stamped in once at startup. The
-// origin ({{ORIGIN}}) is stamped per request: OG tags need absolute URLs and
-// the host is only known when a request arrives.
+// The version is stamped once at startup; the origin is stamped per request
+// because OG tags need absolute URLs and the host is only known then.
 var indexHTML = bytes.ReplaceAll(rawIndexHTML, []byte("{{VERSION}}"), []byte(version))
-
-//go:embed all:web/static
-var staticFS embed.FS
 
 //go:embed web/404.html
 var notFoundHTML []byte
+
+// all: is needed so the .well-known dotdir is embedded.
+//
+//go:embed all:web/static
+var staticFS embed.FS
 
 // nickRE bounds what one stranger can make another stranger's screen show.
 var nickRE = regexp.MustCompile(`^[a-z]{1,20}_[a-z]{1,20}_[a-z0-9]{4}$`)
@@ -51,28 +51,39 @@ var animals = strings.Fields(`beaver otter badger fox owl heron moose lynx mole 
 	quail raven seal toad vole walrus yak zebra crab dingo eagle ferret gecko hare
 	ibis koala lemur marmot narwhal`)
 
-const suffixAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
-const suffixLen = 4
+const (
+	suffixAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
+	suffixLen      = 4
+)
+
+// Everything the page needs is same-origin and nothing is inline.
+const csp = "default-src 'none'; script-src 'self'; style-src 'self'; " +
+	"img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 func newNick() string {
-	var s strings.Builder
-	s.WriteString(adjectives[rand.IntN(len(adjectives))])
-	s.WriteByte('_')
-	s.WriteString(animals[rand.IntN(len(animals))])
-	s.WriteByte('_')
+	var nick strings.Builder
+	nick.WriteString(adjectives[rand.IntN(len(adjectives))])
+	nick.WriteByte('_')
+	nick.WriteString(animals[rand.IntN(len(animals))])
+	nick.WriteByte('_')
 	for range suffixLen {
-		s.WriteByte(suffixAlphabet[rand.IntN(len(suffixAlphabet))])
+		nick.WriteByte(suffixAlphabet[rand.IntN(len(suffixAlphabet))])
 	}
-	return s.String()
+	return nick.String()
 }
 
-func writeJSON(w http.ResponseWriter, v any) {
+func writeJSON(w http.ResponseWriter, value any) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(v)
+	json.NewEncoder(w).Encode(value)
 }
 
-// origin is the scheme and host a client used to reach us, honouring a
-// TLS-terminating proxy's X-Forwarded-Proto.
+func writeHTML(w http.ResponseWriter, status int, page []byte) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	w.Write(page)
+}
+
+// origin honours a TLS-terminating proxy's X-Forwarded-Proto.
 func origin(r *http.Request) string {
 	scheme := "http"
 	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
@@ -81,33 +92,61 @@ func origin(r *http.Request) string {
 	return scheme + "://" + r.Host
 }
 
-// Everything the page needs is same-origin and nothing is inline, so the
-// policy can be strict.
-const csp = "default-src 'none'; script-src 'self'; style-src 'self'; " +
-	"img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
-
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hd := w.Header()
-		hd.Set("Content-Security-Policy", csp)
-		hd.Set("X-Content-Type-Options", "nosniff")
-		hd.Set("X-Frame-Options", "DENY")
-		hd.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		headers := w.Header()
+		headers.Set("Content-Security-Policy", csp)
+		headers.Set("X-Content-Type-Options", "nosniff")
+		headers.Set("X-Frame-Options", "DENY")
+		headers.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		next.ServeHTTP(w, r)
 	})
 }
 
-func newMux(h *hub) http.Handler {
+func newMux(matchmaker *hub) http.Handler {
 	mux := http.NewServeMux()
+	gauge := &connGauge{}
+
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(bytes.ReplaceAll(indexHTML, []byte("{{ORIGIN}}"), []byte(origin(r))))
+		page := bytes.ReplaceAll(indexHTML, []byte("{{ORIGIN}}"), []byte(origin(r)))
+		writeHTML(w, http.StatusOK, page)
 	})
-	// One route per embedded static file (favicon, robots.txt, og image,
-	// .well-known/*), so the catch-all 404 below still owns every other path.
+	registerStaticFiles(mux)
+	// Catch-all 404 for every other GET; http.FS would force a 200.
+	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+		writeHTML(w, http.StatusNotFound, notFoundHTML)
+	})
+
+	register := func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]string{"nick": newNick()})
+	}
+	mux.HandleFunc("POST /api/register", rateLimit(newLimiter(registerLimit, registerWindow), register))
+	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]int32{"waiting": matchmaker.nWaiting.Load(), "paired": matchmaker.nPaired.Load()})
+	})
+	mux.HandleFunc("GET /version", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		fmt.Fprintln(w, version)
+	})
+	mux.HandleFunc("GET /ws", func(w http.ResponseWriter, r *http.Request) {
+		serveWS(matchmaker, gauge, w, r)
+	})
+
+	// A method-less "/mcp" would conflict with the "GET /" catch-all under the
+	// mux's precedence rules, so each method is registered explicitly.
+	mcpHandler := newMCPHandler(matchmaker, gauge)
+	for _, method := range []string{"GET", "POST", "DELETE"} {
+		mux.Handle(method+" /mcp", mcpHandler)
+	}
+	return securityHeaders(mux)
+}
+
+// registerStaticFiles adds one route per embedded file so the catch-all 404
+// still owns every other path.
+func registerStaticFiles(mux *http.ServeMux) {
 	static, _ := fs.Sub(staticFS, "web/static")
-	fs.WalkDir(static, ".", func(name string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+	fs.WalkDir(static, ".", func(name string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
 			return err
 		}
 		mux.HandleFunc("GET /"+name, func(w http.ResponseWriter, r *http.Request) {
@@ -115,37 +154,11 @@ func newMux(h *hub) http.Handler {
 		})
 		return nil
 	})
-	// Designated 404 page for every other GET. Not served via http.FS because
-	// that would force a 200.
-	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusNotFound)
-		w.Write(notFoundHTML)
-	})
-	mux.HandleFunc("POST /api/register", rateLimit(newLimiter(registerLimit, registerWindow), func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, map[string]string{"nick": newNick()})
-	}))
-	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, map[string]int32{"waiting": h.nWaiting.Load(), "paired": h.nPaired.Load()})
-	})
-	mux.HandleFunc("GET /version", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		fmt.Fprintln(w, version)
-	})
-	gauge := &connGauge{}
-	mux.HandleFunc("GET /ws", func(w http.ResponseWriter, r *http.Request) { serveWS(h, gauge, w, r) })
-	// MCP for LLM clients: GET (SSE), POST and DELETE on one endpoint. The
-	// methods are spelled out because a method-less "/mcp" conflicts with the
-	// "GET /" catch-all in the mux's precedence rules.
-	mcpHandler := newMCPHandler(h, gauge)
-	for _, method := range []string{"GET", "POST", "DELETE"} {
-		mux.Handle(method+" /mcp", mcpHandler)
-	}
-	return securityHeaders(mux)
 }
 
-func serveWS(h *hub, gauge *connGauge, w http.ResponseWriter, r *http.Request) {
-	nick := r.URL.Query().Get("nick")
+func serveWS(matchmaker *hub, gauge *connGauge, w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	nick := query.Get("nick")
 	if !nickRE.MatchString(nick) {
 		http.Error(w, "bad nick", http.StatusBadRequest)
 		return
@@ -156,8 +169,9 @@ func serveWS(h *hub, gauge *connGauge, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer gauge.release(ip)
-	// Default AcceptOptions enforce same-origin, which is right: this binary
-	// serves the page. Add OriginPatterns only if a proxy rewrites Host.
+
+	// Default AcceptOptions enforce same-origin, which is right because this
+	// binary serves the page. Add OriginPatterns only if a proxy rewrites Host.
 	conn, err := websocket.Accept(w, r, nil)
 	if err != nil {
 		log.Printf("%s: accept: %v", nick, err)
@@ -165,16 +179,22 @@ func serveWS(h *hub, gauge *connGauge, w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.CloseNow()
 
-	// Library docs advise against r.Context() after the hijack.
+	// The library advises against r.Context() after the hijack.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	q := r.URL.Query()
-	c := &client{conn: conn, nick: nick, bot: q.Get("bot") == "1", humanOnly: q.Get("human") == "1",
-		send: make(chan []byte, sendBuf), ctx: ctx, cancel: cancel}
-	h.register <- c
-	defer func() { h.unregister <- c }()
-	go c.writePump()
-	c.readPump(h)
+	peer := &client{
+		conn:      conn,
+		nick:      nick,
+		bot:       query.Get("bot") == "1",
+		humanOnly: query.Get("human") == "1",
+		send:      make(chan []byte, sendBuf),
+		ctx:       ctx,
+		cancel:    cancel,
+	}
+	matchmaker.register <- peer
+	defer func() { matchmaker.unregister <- peer }()
+	go peer.writePump()
+	peer.readPump(matchmaker)
 }
 
 func main() {
@@ -187,8 +207,8 @@ func main() {
 		os.Exit(0)
 	}
 
-	h := newHub()
-	go h.run()
+	matchmaker := newHub()
+	go matchmaker.run()
 	log.Printf("listening on %s", *addr)
-	log.Fatal(http.ListenAndServe(*addr, newMux(h)))
+	log.Fatal(http.ListenAndServe(*addr, newMux(matchmaker)))
 }
