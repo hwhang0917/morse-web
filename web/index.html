@@ -1,61 +1,113 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Morse: 1-on-1 Morse code with a stranger</title>
-<meta name="description" content="Free online Morse code key. Get paired with a stranger and tap dots and dashes at each other in real time, with sound and vibration.">
-<meta name="theme-color" content="#111111">
-<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
-<link rel="icon" href="/img/favicon.png" type="image/png" sizes="192x192">
-<link rel="apple-touch-icon" href="/img/favicon.png">
-<link rel="canonical" href="{{ORIGIN}}/">
-<meta property="og:type" content="website">
-<meta property="og:site_name" content="morse-web">
-<meta property="og:title" content="Morse: 1-on-1 Morse code">
-<meta property="og:description" content="Get paired with a stranger and key Morse at each other in real time.">
-<meta property="og:url" content="{{ORIGIN}}/">
-<meta property="og:image" content="{{ORIGIN}}/img/og.png">
-<meta property="og:image:width" content="1200">
-<meta property="og:image:height" content="630">
-<meta name="twitter:card" content="summary_large_image">
-<script type="application/ld+json">
-{"@context":"https://schema.org","@type":"WebApplication","name":"morse-web","url":"{{ORIGIN}}/","image":"{{ORIGIN}}/img/og.png","description":"Free online Morse code key. Get paired with a stranger and tap dots and dashes at each other in real time.","applicationCategory":"CommunicationApplication","operatingSystem":"Any","browserRequirements":"Requires WebSocket and Web Audio","isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"codeRepository":"https://github.com/hwhang0917/morse-web"}
-</script>
-<link rel="stylesheet" href="/css/base.css">
-<link rel="stylesheet" href="/css/app.css">
-</head>
-<body>
-<div id="online" aria-live="polite"></div>
-<details id="menu">
-  <summary aria-label="Settings"></summary>
-  <div>
-    <label>Sound <input type="checkbox" data-setting="sound"></label>
-    <label id="vib" hidden>Vibrate on incoming <input type="checkbox" data-setting="vibrate"></label>
-    <label>Flash screen on incoming <input type="checkbox" data-setting="flash"></label>
-    <label title="Wait for a human instead of pairing with a bot">Prefer human <input type="checkbox" data-setting="human"></label>
-    <button id="newnick" type="button">New nickname</button>
-    <a id="mcplink" href="/mcp.html" target="_blank" rel="noopener">MCP: use from an AI client</a>
-    <details id="ref">
-      <summary>Morse code reference</summary>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Morse: 1-on-1 Morse code with a stranger</title>
+    <meta name="description" content="Free online Morse code key. Get paired with a stranger and tap dots and dashes at each other in real time, with sound and vibration.">
+    <meta name="theme-color" content="#111111">
+    <link rel="canonical" href="{{ORIGIN}}/">
+
+    <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+    <link rel="icon" href="/img/favicon.png" type="image/png" sizes="192x192">
+    <link rel="apple-touch-icon" href="/img/favicon.png">
+
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="morse-web">
+    <meta property="og:title" content="Morse: 1-on-1 Morse code">
+    <meta property="og:description" content="Get paired with a stranger and key Morse at each other in real time.">
+    <meta property="og:url" content="{{ORIGIN}}/">
+    <meta property="og:image" content="{{ORIGIN}}/img/og.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:card" content="summary_large_image">
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "morse-web",
+        "url": "{{ORIGIN}}/",
+        "image": "{{ORIGIN}}/img/og.png",
+        "description": "Free online Morse code key. Get paired with a stranger and tap dots and dashes at each other in real time.",
+        "applicationCategory": "CommunicationApplication",
+        "operatingSystem": "Any",
+        "browserRequirements": "Requires WebSocket and Web Audio",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "codeRepository": "https://github.com/hwhang0917/morse-web"
+      }
+    </script>
+
+    <link rel="stylesheet" href="/css/base.css">
+    <link rel="stylesheet" href="/css/app.css">
+  </head>
+
+  <body>
+    <div id="online" aria-live="polite"></div>
+
+    <details id="menu">
+      <summary aria-label="Settings"></summary>
       <div>
-        <span>A</span><code>.-</code><span>B</span><code>-...</code><span>C</span><code>-.-.</code><span>D</span><code>-..</code><span>E</span><code>.</code>
-        <span>F</span><code>..-.</code><span>G</span><code>--.</code><span>H</span><code>....</code><span>I</span><code>..</code><span>J</span><code>.---</code>
-        <span>K</span><code>-.-</code><span>L</span><code>.-..</code><span>M</span><code>--</code><span>N</span><code>-.</code><span>O</span><code>---</code>
-        <span>P</span><code>.--.</code><span>Q</span><code>--.-</code><span>R</span><code>.-.</code><span>S</span><code>...</code><span>T</span><code>-</code>
-        <span>U</span><code>..-</code><span>V</span><code>...-</code><span>W</span><code>.--</code><span>X</span><code>-..-</code><span>Y</span><code>-.--</code>
-        <span>Z</span><code>--..</code><span>0</span><code>-----</code><span>1</span><code>.----</code><span>2</span><code>..---</code><span>3</span><code>...--</code>
-        <span>4</span><code>....-</code><span>5</span><code>.....</code><span>6</span><code>-....</code><span>7</span><code>--...</code><span>8</span><code>---..</code>
-        <span>9</span><code>----.</code>
+        <label>Sound <input type="checkbox" data-setting="sound"></label>
+        <label id="vib" hidden>Vibrate on incoming <input type="checkbox" data-setting="vibrate"></label>
+        <label>Flash screen on incoming <input type="checkbox" data-setting="flash"></label>
+        <label title="Wait for a human instead of pairing with a bot">Prefer human <input type="checkbox" data-setting="human"></label>
+        <button id="newnick" type="button">New nickname</button>
+        <a id="mcplink" href="/mcp.html" target="_blank" rel="noopener">MCP: use from an AI client</a>
+        <details id="ref">
+          <summary>Morse code reference</summary>
+          <div>
+          <span>A</span><code>.-</code>
+          <span>B</span><code>-...</code>
+          <span>C</span><code>-.-.</code>
+          <span>D</span><code>-..</code>
+          <span>E</span><code>.</code>
+          <span>F</span><code>..-.</code>
+          <span>G</span><code>--.</code>
+          <span>H</span><code>....</code>
+          <span>I</span><code>..</code>
+          <span>J</span><code>.---</code>
+          <span>K</span><code>-.-</code>
+          <span>L</span><code>.-..</code>
+          <span>M</span><code>--</code>
+          <span>N</span><code>-.</code>
+          <span>O</span><code>---</code>
+          <span>P</span><code>.--.</code>
+          <span>Q</span><code>--.-</code>
+          <span>R</span><code>.-.</code>
+          <span>S</span><code>...</code>
+          <span>T</span><code>-</code>
+          <span>U</span><code>..-</code>
+          <span>V</span><code>...-</code>
+          <span>W</span><code>.--</code>
+          <span>X</span><code>-..-</code>
+          <span>Y</span><code>-.--</code>
+          <span>Z</span><code>--..</code>
+          <span>0</span><code>-----</code>
+          <span>1</span><code>.----</code>
+          <span>2</span><code>..---</code>
+          <span>3</span><code>...--</code>
+          <span>4</span><code>....-</code>
+          <span>5</span><code>.....</code>
+          <span>6</span><code>-....</code>
+          <span>7</span><code>--...</code>
+          <span>8</span><code>---..</code>
+          <span>9</span><code>----.</code>
+          </div>
+        </details>
+        <footer>v{{VERSION}} · <a href="https://github.com/hwhang0917/morse-web">GitHub</a></footer>
       </div>
     </details>
-    <footer>v{{VERSION}} · <a href="https://github.com/hwhang0917/morse-web">GitHub</a></footer>
-  </div>
-</details>
-<div id="toast" role="status" aria-live="polite"></div>
-<div id="nick"><span class="dot"></span><span class="name"></span> <span class="tag"></span></div>
-<div id="status">connecting…</div>
-<button id="key" aria-label="Morse key">KEY</button>
-<script type="module" src="/js/app.js"></script>
-</body>
+
+    <div id="toast" role="status" aria-live="polite"></div>
+
+    <div id="nick">
+      <span class="dot"></span><span class="name"></span> <span class="tag"></span>
+    </div>
+    <div id="status">connecting…</div>
+    <button id="key" aria-label="Morse key">KEY</button>
+
+    <script type="module" src="/js/app.js"></script>
+  </body>
 </html>

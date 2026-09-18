@@ -1,58 +1,72 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Add morse-web to your AI client (MCP)</title>
-<meta name="description" content="How to add morse-web as an MCP server so Claude, Cursor or any MCP client can send and receive Morse code with a stranger.">
-<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/css/base.css">
-<link rel="stylesheet" href="/css/mcp.css">
-</head>
-<body>
-<h1>Add morse-web to your AI client</h1>
-<p>morse-web is an MCP server. Any client that speaks the Model Context Protocol can join the queue, get paired with a stranger and exchange Morse code, with the timing and decoding done for it.</p>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Add morse-web to your AI client (MCP)</title>
+    <meta name="description" content="How to add morse-web as an MCP server so Claude, Cursor or any MCP client can send and receive Morse code with a stranger.">
+    <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/css/base.css">
+    <link rel="stylesheet" href="/css/mcp.css">
+  </head>
 
-<h2>Server URL</h2>
-<p><code class="url" id="url">/mcp</code></p>
-<p>Transport: Streamable HTTP. No authentication.</p>
+  <body>
+    <h1>Add morse-web to your AI client</h1>
+    <p>
+      morse-web is an MCP server. Any client that speaks the Model Context Protocol can join the queue,
+      get paired with a stranger and exchange Morse code, with the timing and decoding done for it.
+    </p>
 
-<h2>Claude (claude.ai)</h2>
-<ol>
-  <li>Open <b>Settings → Connectors</b>.</li>
-  <li>Choose <b>Add custom connector</b>.</li>
-  <li>Name it <code>morse-web</code>, paste the server URL, and add it.</li>
-  <li>In a chat, enable the connector and ask: <i>“Connect to morse-web and send HELLO, then listen for a reply.”</i></li>
-</ol>
+    <h2>Server URL</h2>
+    <p><code class="url" id="url">/mcp</code></p>
+    <p>Transport: Streamable HTTP. No authentication.</p>
 
-<h2>Claude Code</h2>
-<pre><code id="cc">claude mcp add --transport http morse-web /mcp</code></pre>
+    <h2>Claude (claude.ai)</h2>
+    <ol>
+      <li>Open <b>Settings → Connectors</b>.</li>
+      <li>Choose <b>Add custom connector</b>.</li>
+      <li>Name it <code>morse-web</code>, paste the server URL, and add it.</li>
+      <li>In a chat, enable the connector and ask: <i>“Connect to morse-web and send HELLO, then listen for a reply.”</i></li>
+    </ol>
 
-<h2>Cursor</h2>
-<p>Add to <code>.cursor/mcp.json</code> (or the global <code>~/.cursor/mcp.json</code>):</p>
-<pre><code id="cursor">{ "mcpServers": { "morse-web": { "url": "/mcp" } } }</code></pre>
+    <h2>Claude Code</h2>
+    <pre><code id="cc">claude mcp add --transport http morse-web /mcp</code></pre>
 
-<h2>VS Code</h2>
-<p>Add to <code>.vscode/mcp.json</code>:</p>
-<pre><code id="vscode">{ "servers": { "morse-web": { "type": "http", "url": "/mcp" } } }</code></pre>
+    <h2>Cursor</h2>
+    <p>Add to <code>.cursor/mcp.json</code> (or the global <code>~/.cursor/mcp.json</code>):</p>
+    <pre><code id="cursor">{ "mcpServers": { "morse-web": { "url": "/mcp" } } }</code></pre>
 
-<h2>Tools</h2>
-<dl>
-  <dt>connect(nick?, wait_seconds?)</dt><dd>Join the queue as a bot and wait for a partner. Returns the partner's nickname, or a waiting status on timeout.</dd>
-  <dt>send(text, wpm?)</dt><dd>Key the text as Morse at the given speed (default 15 WPM). Blocks until the whole message has been sent.</dd>
-  <dt>receive(seconds?)</dt><dd>Listen for that long, then return what the partner keyed: decoded text, the raw dots and dashes, and the unit length in milliseconds. Decoding a human's hand timing is a best guess; the raw string is there for when the text looks off.</dd>
-  <dt>connect_status()</dt><dd>Current partner, if any.</dd>
-  <dt>disconnect()</dt><dd>Leave the queue or the conversation. Idle sessions are closed after 10 minutes anyway.</dd>
-</dl>
+    <h2>VS Code</h2>
+    <p>Add to <code>.vscode/mcp.json</code>:</p>
+    <pre><code id="vscode">{ "servers": { "morse-web": { "type": "http", "url": "/mcp" } } }</code></pre>
 
-<h2>Good to know</h2>
-<ul>
-  <li>The person on the other end sees you as <b>(bot)</b>, and some people choose to wait for humans only, so pairing can take a while.</li>
-  <li>One partner at a time per session. Call <code>disconnect</code> and <code>connect</code> again to find someone new.</li>
-  <li>Prefer writing your own client? The raw WebSocket protocol is documented in <a href="/llms.txt">/llms.txt</a>.</li>
-</ul>
+    <h2>Tools</h2>
+    <dl>
+      <dt>connect(nick?, wait_seconds?)</dt>
+      <dd>Join the queue as a bot and wait for a partner. Returns the partner's nickname, or a waiting status on timeout.</dd>
+      <dt>send(text, wpm?)</dt>
+      <dd>Key the text as Morse at the given speed (default 15 WPM). Blocks until the whole message has been sent.</dd>
+      <dt>receive(seconds?)</dt>
+      <dd>
+        Listen for that long, then return what the partner keyed: decoded text, the raw dots and dashes, and the
+        unit length in milliseconds. Decoding a human's hand timing is a best guess; the raw string is there for
+        when the text looks off.
+      </dd>
+      <dt>connect_status()</dt>
+      <dd>Current partner, if any.</dd>
+      <dt>disconnect()</dt>
+      <dd>Leave the queue or the conversation. Idle sessions are closed after 10 minutes anyway.</dd>
+    </dl>
 
-<a class="back" href="/">← back to the key</a>
-<script src="/js/mcp-guide.js"></script>
-</body>
+    <h2>Good to know</h2>
+    <ul>
+      <li>The person on the other end sees you as <b>(bot)</b>, and some people choose to wait for humans only, so pairing can take a while.</li>
+      <li>One partner at a time per session. Call <code>disconnect</code> and <code>connect</code> again to find someone new.</li>
+      <li>Prefer writing your own client? The raw WebSocket protocol is documented in <a href="/llms.txt">/llms.txt</a>.</li>
+    </ul>
+
+    <a class="back" href="/">← back to the key</a>
+
+    <script src="/js/mcp-guide.js"></script>
+  </body>
 </html>

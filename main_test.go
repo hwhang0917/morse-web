@@ -45,7 +45,7 @@ func TestRoutes(t *testing.T) {
 	if !strings.Contains(string(body), `property="og:image" content="`+srv.URL+`/img/og.png"`) {
 		t.Fatalf("GET /: og:image not stamped with request origin")
 	}
-	if !strings.Contains(string(body), `<script type="application/ld+json">`) || !strings.Contains(string(body), `"url":"`+srv.URL+`/"`) {
+	if !strings.Contains(string(body), `<script type="application/ld+json">`) || !strings.Contains(string(body), `"url": "`+srv.URL+`/"`) {
 		t.Fatalf("GET /: JSON-LD missing or not stamped with request origin")
 	}
 
