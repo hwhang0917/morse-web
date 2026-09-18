@@ -1,6 +1,6 @@
 const STORAGE_KEY = 'settings';
 // Flash stays off by default: a full-screen strobe is a seizure risk.
-const DEFAULTS = { sound: true, vibrate: false, flash: false, human: false };
+const DEFAULTS = { sound: true, vibrate: false, flash: false, human: false, translate: false };
 
 function load() {
   try {

@@ -80,6 +80,20 @@ body.rx {
   min-height: 1.4em;
 }
 
+#translation {
+  min-height: 1.4em;
+  max-width: 80vw;
+  font-family: ui-monospace, monospace;
+  font-size: 1.1rem;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+}
+
+#translation .partial {
+  color: var(--accent);
+  opacity: 0.7;
+}
+
 #online {
   position: fixed;
   top: 1.3rem;

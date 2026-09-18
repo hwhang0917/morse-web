@@ -58,6 +58,7 @@ func TestRoutes(t *testing.T) {
 		"/js/audio.js":              "text/javascript",
 		"/js/socket.js":             "text/javascript",
 		"/js/app.js":                "text/javascript",
+		"/js/morse.js":              "text/javascript",
 		"/css/base.css":             "text/css",
 		"/css/app.css":              "text/css",
 		"/css/404.css":              "text/css",

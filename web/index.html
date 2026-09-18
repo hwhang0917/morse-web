@@ -53,6 +53,7 @@
         <label id="vib" hidden>Vibrate on incoming <input type="checkbox" data-setting="vibrate"></label>
         <label>Flash screen on incoming <input type="checkbox" data-setting="flash"></label>
         <label title="Wait for a human instead of pairing with a bot">Prefer human <input type="checkbox" data-setting="human"></label>
+        <label title="Best-effort decoding of what the partner keys">Show translation <input type="checkbox" data-setting="translate"></label>
         <button id="newnick" type="button">New nickname</button>
         <a id="mcplink" href="/mcp.html" target="_blank" rel="noopener">MCP: use from an AI client</a>
         <details id="ref">
@@ -106,6 +107,7 @@
       <span class="dot"></span><span class="name"></span> <span class="tag"></span>
     </div>
     <div id="status">connecting…</div>
+    <div id="translation" hidden><span class="text"></span><span class="partial"></span></div>
     <button id="key" aria-label="Morse key">KEY</button>
 
     <script type="module" src="/js/app.js"></script>

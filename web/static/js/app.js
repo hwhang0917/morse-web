@@ -1,8 +1,10 @@
 import { settings, bindSettings } from './settings.js';
 import { audioContext, localTone, remoteTone, vibrate } from './audio.js';
 import { cookieNick, registerNick, createSocket } from './socket.js';
+import { createDecoder } from './morse.js';
 
 const TOAST_MS = 3000;
+const TRANSLATION_CHARS = 40;
 
 const $name = document.querySelector('#nick .name');
 const $tag = document.querySelector('#nick .tag');
@@ -14,6 +16,9 @@ const $menu = document.getElementById('menu');
 const $online = document.getElementById('online');
 const $newNick = document.getElementById('newnick');
 const $vibrateSetting = document.getElementById('vib');
+const $translation = document.getElementById('translation');
+const $translated = document.querySelector('#translation .text');
+const $partial = document.querySelector('#translation .partial');
 
 let nick = '';
 let partner = '';
@@ -28,8 +33,16 @@ function toast(text, kind) {
   toastTimer = setTimeout(() => $toast.classList.remove('show'), TOAST_MS);
 }
 
+const decoder = createDecoder({
+  onChange({ text, letter }) {
+    $translated.textContent = text.slice(-TRANSLATION_CHARS);
+    $partial.textContent = letter;
+  },
+});
+
 function render() {
   $dot.classList.toggle('live', Boolean(partner));
+  $translation.hidden = !settings.translate;
   const audioBlocked = settings.sound && audioContext.state !== 'running';
   $status.textContent = audioBlocked ? `${status} · tap the key to enable audio` : status;
 }
@@ -42,6 +55,7 @@ function showNick() {
 
 function receive(on) {
   remoteTone(on);
+  if (settings.translate) (on ? decoder.keyDown : decoder.keyUp)();
   if (settings.vibrate) vibrate(on);
   if (settings.flash) document.body.classList.toggle('rx', on);
 }
@@ -56,6 +70,7 @@ function setKey(isDown) {
 
 function clearPartner(newStatus) {
   receive(false);
+  decoder.reset();
   partner = '';
   status = newStatus;
   render();
@@ -78,6 +93,7 @@ function stopOutput(setting) {
   }
   if (setting === 'vibrate') vibrate(false);
   if (setting === 'flash') document.body.classList.remove('rx');
+  if (setting === 'translate') decoder.reset();
 }
 
 const socket = createSocket({
