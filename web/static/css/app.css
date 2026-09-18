@@ -1,0 +1,96 @@
+:root { color-scheme: dark; --accent: #e8b23a; }
+html, body { height: 100%; margin: 0; overflow: hidden; }
+body {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.5rem;
+  background: #111; color: #ddd; font-family: system-ui, sans-serif; transition: background .05s;
+}
+#ref { font-size: .85rem; border-top: 1px solid #444; padding-top: .6rem; }
+#ref summary { cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent; }
+#ref > div { display: grid; grid-template-columns: repeat(3, auto auto); gap: .25rem .8rem; justify-content: start; margin-top: .6rem; }
+#ref span { font-weight: 600; text-align: right; }
+#ref code { color: var(--accent); letter-spacing: .1em; }
+#nick { font-size: 1.2rem; }
+#nick .name { color: var(--accent); font-weight: 600; }
+#nick .tag { opacity: .5; font-size: .9em; }
+/* Recording-light style: gray when idle, blinking red during a live session. */
+#nick .dot {
+  display: inline-block; width: .7em; height: .7em; border-radius: 50%; margin-right: .4em;
+  background: #666; vertical-align: middle;
+}
+#nick .dot.live { background: #e53935; animation: glow 1.6s ease-in-out infinite; }
+/* A filament warms up and cools down rather than switching: fade the colour
+   and the halo together, so the dim phase is a deep red rather than a gap. */
+@keyframes glow {
+  0%, 100% { background: #5a1210; box-shadow: 0 0 0 0 rgba(229, 57, 53, 0); }
+  50%      { background: #ff5148; box-shadow: 0 0 .6em .15em rgba(229, 57, 53, .8); }
+}
+@media (prefers-reduced-motion: reduce) { #nick .dot.live { animation: none; box-shadow: 0 0 .5em #e53935; } }
+#status { min-height: 1.4em; }
+#online { position: fixed; top: 1.3rem; left: 1.2rem; font-size: .9rem; opacity: .6; }
+#menu footer { font-size: .8rem; opacity: .5; text-align: center; }
+#menu footer a { display: inline; padding: 0; background: none; border: none; color: inherit; }
+#key {
+  width: min(60vw, 60vh); aspect-ratio: 1; border-radius: 50%; border: none;
+  background: #333; color: #ccc; font-size: 1.5rem; letter-spacing: .2em; cursor: pointer;
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background .05s;
+}
+body.tx #key { background: var(--accent); color: #111; }
+body.rx { background: #23305a; }
+
+#toast {
+  position: fixed; top: 1.2rem; left: 50%; transform: translateX(-50%);
+  padding: .6rem 1.2rem; border-radius: .4rem; font-weight: 600; color: #fff;
+  opacity: 0; transition: opacity .25s; pointer-events: none; max-width: calc(100vw - 6rem);
+}
+#toast.show { opacity: 1; }
+#toast.ok { background: #2e7d32; }
+#toast.bad { background: #c62828; }
+
+/* Native collapsible: no JS needed for open/close. */
+#menu { position: fixed; top: 1rem; right: 1rem; z-index: 10; }
+#menu > summary {
+  list-style: none; cursor: pointer; font-size: 1.6rem; line-height: 1; padding: .3rem .5rem;
+  user-select: none; -webkit-tap-highlight-color: transparent; position: relative; z-index: 1;
+}
+#menu > summary::-webkit-details-marker { display: none; }
+#menu > summary::before { content: "☰"; }
+#menu[open] > summary::before { content: "✕"; }
+#menu > div {
+  position: absolute; right: 0; margin-top: .3rem; min-width: 16rem; padding: .9rem 1rem;
+  max-height: calc(100vh - 4rem); overflow-y: auto;
+  background: #2a2a2a; border: 1px solid #555; border-radius: .5rem; display: grid; gap: .8rem;
+  box-shadow: 0 .5rem 1.5rem rgba(0, 0, 0, .6);
+}
+#menu label { display: flex; align-items: center; gap: .6rem; cursor: pointer; white-space: nowrap; }
+#menu label[hidden] { display: none; }
+/* Checkbox drawn as a switch; the ON/OFF word comes from the label itself. */
+#menu input[type="checkbox"] {
+  appearance: none; margin: 0 0 0 auto; width: 2.6rem; height: 1.4rem; border-radius: .7rem;
+  background: #555; position: relative; cursor: pointer; transition: background .15s;
+}
+#menu input[type="checkbox"]::before {
+  content: ""; position: absolute; top: .15rem; left: .15rem; width: 1.1rem; height: 1.1rem;
+  border-radius: 50%; background: #eee; transition: left .15s;
+}
+#menu input[type="checkbox"]:checked { background: var(--accent); }
+#menu input[type="checkbox"]:checked::before { left: 1.35rem; }
+#menu label::after { content: "OFF"; width: 2rem; font-size: .75rem; font-weight: 600; opacity: .5; }
+#menu label:has(:checked)::after { content: "ON"; color: var(--accent); opacity: 1; }
+
+/* Phones: the panel becomes a right-hand drawer with a dimmed backdrop. */
+@media (max-width: 600px) {
+  #menu[open]::before { content: ""; position: fixed; inset: 0; background: rgba(0, 0, 0, .55); }
+  #menu > div {
+    position: fixed; top: 0; right: 0; bottom: 0; margin: 0; width: min(80vw, 20rem);
+    border: none; border-left: 1px solid #555; border-radius: 0;
+    padding: 4.5rem 1.2rem 1.2rem; align-content: start; font-size: 1.05rem; max-height: none; overflow-y: auto;
+    animation: slide-in .2s ease-out;
+  }
+  @keyframes slide-in { from { transform: translateX(100%); } }
+}
+#menu button, #menu a {
+  display: block; padding: .5rem; background: #333; color: #ddd; border: 1px solid #555; border-radius: .3rem;
+  cursor: pointer; text-align: center; text-decoration: none; font: inherit;
+}

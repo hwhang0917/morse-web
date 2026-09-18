@@ -81,9 +81,9 @@ func origin(r *http.Request) string {
 	return scheme + "://" + r.Host
 }
 
-// Everything the page needs is same-origin, so the policy can be strict; the
-// stylesheet is the only inline resource left.
-const csp = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+// Everything the page needs is same-origin and nothing is inline, so the
+// policy can be strict.
+const csp = "default-src 'none'; script-src 'self'; style-src 'self'; " +
 	"img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 func securityHeaders(next http.Handler) http.Handler {
