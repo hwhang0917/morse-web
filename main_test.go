@@ -42,7 +42,7 @@ func TestRoutes(t *testing.T) {
 		t.Fatalf("GET /: status=%d type=%q version stamped=%v", r.StatusCode, r.Header.Get("Content-Type"), strings.Contains(string(body), version))
 	}
 
-	if !strings.Contains(string(body), `property="og:image" content="`+srv.URL+`/og.png"`) {
+	if !strings.Contains(string(body), `property="og:image" content="`+srv.URL+`/img/og.png"`) {
 		t.Fatalf("GET /: og:image not stamped with request origin")
 	}
 	if !strings.Contains(string(body), `<script type="application/ld+json">`) || !strings.Contains(string(body), `"url":"`+srv.URL+`/"`) {
@@ -51,17 +51,17 @@ func TestRoutes(t *testing.T) {
 
 	for path, typ := range map[string]string{
 		"/robots.txt":               "text/plain",
-		"/favicon.svg":              "image/svg+xml",
-		"/favicon.png":              "image/png",
-		"/og.png":                   "image/png",
-		"/settings.js":              "text/javascript",
-		"/audio.js":                 "text/javascript",
-		"/socket.js":                "text/javascript",
-		"/app.js":                   "text/javascript",
+		"/img/favicon.svg":          "image/svg+xml",
+		"/img/favicon.png":          "image/png",
+		"/img/og.png":               "image/png",
+		"/js/settings.js":           "text/javascript",
+		"/js/audio.js":              "text/javascript",
+		"/js/socket.js":             "text/javascript",
+		"/js/app.js":                "text/javascript",
 		"/.well-known/security.txt": "text/plain",
 		"/llms.txt":                 "text/plain",
 		"/mcp.html":                 "text/html",
-		"/mcp-guide.js":             "text/javascript",
+		"/js/mcp-guide.js":          "text/javascript",
 	} {
 		if r := get(path); r.StatusCode != 200 || !strings.HasPrefix(r.Header.Get("Content-Type"), typ) {
 			t.Fatalf("GET %s: status=%d type=%q, want %s", path, r.StatusCode, r.Header.Get("Content-Type"), typ)

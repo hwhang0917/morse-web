@@ -1,6 +1,6 @@
-import { settings, bindSettings } from '/settings.js';
-import { ac, localTone, remoteTone, vibrate } from '/audio.js';
-import { cookieNick, registerNick, createSocket } from '/socket.js';
+import { settings, bindSettings } from './settings.js';
+import { ac, localTone, remoteTone, vibrate } from './audio.js';
+import { cookieNick, registerNick, createSocket } from './socket.js';
 
 const TOAST_MS = 3000;
 
