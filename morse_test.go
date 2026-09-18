@@ -88,3 +88,34 @@ func TestDecodeUnknownAndEmpty(t *testing.T) {
 		t.Fatalf("got text %q raw %q", text, raw)
 	}
 }
+
+// A thumb on a phone: dots near 90ms and dashes near 300ms, but pauses
+// between taps near 200ms and between letters near 550ms.
+func humanTimed(letters []string) []keyEvent {
+	ms := func(n int) time.Duration { return time.Duration(n) * time.Millisecond }
+	var plan []keyStep
+	for letterIndex, code := range letters {
+		if letterIndex > 0 {
+			plan = append(plan, keyStep{false, ms(550)})
+		}
+		for symbolIndex, symbol := range code {
+			if symbolIndex > 0 {
+				plan = append(plan, keyStep{false, ms(200)})
+			}
+			if symbol == '.' {
+				plan = append(plan, keyStep{true, ms(90)})
+			} else {
+				plan = append(plan, keyStep{true, ms(300)})
+			}
+		}
+	}
+	plan = append(plan, keyStep{false, 0})
+	return events(plan, exactTiming)
+}
+
+func TestDecodeHumanThumb(t *testing.T) {
+	text, raw, _ := decodeMorse(humanTimed([]string{"...", "---", "..."}))
+	if text != "SOS" {
+		t.Fatalf("decoded %q raw %q", text, raw)
+	}
+}
