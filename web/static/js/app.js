@@ -1,5 +1,5 @@
 import { settings, bindSettings } from './settings.js';
-import { ac, localTone, remoteTone, vibrate } from './audio.js';
+import { audioContext, localTone, remoteTone, vibrate } from './audio.js';
 import { cookieNick, registerNick, createSocket } from './socket.js';
 
 const TOAST_MS = 3000;
@@ -12,11 +12,15 @@ const $key = document.getElementById('key');
 const $toast = document.getElementById('toast');
 const $menu = document.getElementById('menu');
 const $online = document.getElementById('online');
+const $newNick = document.getElementById('newnick');
+const $vibrateSetting = document.getElementById('vib');
 
-let nick = '', partner = '', state = 'connecting…', down = false;
-
-// ---- UI ----
+let nick = '';
+let partner = '';
+let status = 'connecting…';
+let keyDown = false;
 let toastTimer;
+
 function toast(text, kind) {
   $toast.textContent = text;
   $toast.className = `show ${kind}`;
@@ -25,118 +29,126 @@ function toast(text, kind) {
 }
 
 function render() {
-  $dot.classList.toggle('live', !!partner);
-  const needAudio = settings.sound && ac.state !== 'running';
-  $status.textContent = state + (needAudio ? ' · tap the key to enable audio' : '');
+  $dot.classList.toggle('live', Boolean(partner));
+  const audioBlocked = settings.sound && audioContext.state !== 'running';
+  $status.textContent = audioBlocked ? `${status} · tap the key to enable audio` : status;
 }
-ac.onstatechange = render;
 
 function showNick() {
-  // sleepy_beaver_jf34 -> "sleepy_beaver" highlighted, "(jf34)" dimmed.
-  const i = nick.lastIndexOf('_');
-  $name.textContent = nick.slice(0, i);
-  $tag.textContent = '(' + nick.slice(i + 1) + ')';
+  const separator = nick.lastIndexOf('_');
+  $name.textContent = nick.slice(0, separator);
+  $tag.textContent = `(${nick.slice(separator + 1)})`;
 }
 
-// Tapping anywhere outside the panel closes it. The drawer backdrop is a
-// pseudo-element of #menu itself, so test against the panel and summary only.
-document.addEventListener('pointerdown', e => {
-  if ($menu.open && !e.target.closest('#menu > div, #menu > summary')) $menu.open = false;
-});
-
-// ---- settings ----
-if (navigator.vibrate) document.getElementById('vib').hidden = false;
-bindSettings((key, on) => {
-  // Turning something off mid-signal must also stop the signal.
-  if (!on) {
-    if (key === 'sound') { localTone(false); remoteTone(false); }
-    if (key === 'vibrate') vibrate(false);
-    if (key === 'flash') document.body.classList.remove('rx');
-  }
-  // The match rule lives on the server, so changing it means re-queueing.
-  if (key === 'human') reconnect();
-  render();
-});
-
-function socketParams() {
-  return settings.human ? { human: '1' } : {};
-}
-
-// Drop the current socket and join the queue again with the current nick and settings.
-function reconnect() {
-  socket.stop();
-  rx(false);
-  partner = '';
-  state = 'connecting…';
-  render();
-  socket.connect(nick, socketParams());
-}
-
-// ---- incoming signal ----
-function rx(on) {
+function receive(on) {
   remoteTone(on);
   if (settings.vibrate) vibrate(on);
   if (settings.flash) document.body.classList.toggle('rx', on);
 }
 
-// ---- outgoing key: only transitions are sent, which guards multi-touch and the keyboard path. ----
 function setKey(isDown) {
-  if (isDown === down) return;
-  down = isDown;
-  document.body.classList.toggle('tx', down);
-  localTone(down);
-  socket.sendKey(down);
+  if (isDown === keyDown) return;
+  keyDown = isDown;
+  document.body.classList.toggle('tx', keyDown);
+  localTone(keyDown);
+  socket.sendKey(keyDown);
 }
 
-$key.addEventListener('pointerdown', e => { $key.setPointerCapture(e.pointerId); ac.resume(); setKey(true); });
-$key.addEventListener('pointerup', () => setKey(false));
-$key.addEventListener('pointercancel', () => setKey(false));
-$key.addEventListener('contextmenu', e => e.preventDefault());
-window.addEventListener('keydown', e => {
-  if (e.code !== 'Space' || e.repeat || e.target.closest('#menu')) return;
-  e.preventDefault();
-  ac.resume();
-  setKey(true);
-});
-window.addEventListener('keyup', e => { if (e.code === 'Space') setKey(false); });
-// A held key while alt-tabbing would otherwise leave the partner's tone on.
-window.addEventListener('blur', () => setKey(false));
-document.addEventListener('visibilitychange', () => { if (document.hidden) setKey(false); });
+function clearPartner(newStatus) {
+  receive(false);
+  partner = '';
+  status = newStatus;
+  render();
+}
 
-// ---- socket ----
+function socketParams() {
+  return settings.human ? { human: '1' } : {};
+}
+
+function reconnect() {
+  socket.stop();
+  clearPartner('connecting…');
+  socket.connect(nick, socketParams());
+}
+
+function stopOutput(setting) {
+  if (setting === 'sound') {
+    localTone(false);
+    remoteTone(false);
+  }
+  if (setting === 'vibrate') vibrate(false);
+  if (setting === 'flash') document.body.classList.remove('rx');
+}
+
 const socket = createSocket({
-  onKey: rx,
+  onKey: receive,
   onWaiting() {
-    rx(false);
-    // The same frame also means "partner left"; only toast when there was one.
     if (partner) toast(`${partner} disconnected`, 'bad');
-    partner = '';
-    state = 'waiting for a partner…';
-    render();
+    clearPartner('waiting for a partner…');
   },
-  onOnline(n) {
-    $online.textContent = `${n} online`;
-  },
-  onPaired(p, isBot) {
-    partner = p;
-    const label = isBot ? `${partner} (bot)` : partner;
+  onPaired(partnerNick, isBot) {
+    partner = partnerNick;
+    const label = isBot ? `${partnerNick} (bot)` : partnerNick;
     toast(`connected to ${label}`, 'ok');
-    state = 'connected to ' + label;
+    status = `connected to ${label}`;
     render();
+  },
+  onOnline(count) {
+    $online.textContent = `${count} online`;
   },
   onClose() {
     $online.textContent = '';
-    rx(false);
     setKey(false);
-    partner = '';
-    state = 'disconnected, retrying…';
-    render();
+    clearPartner('disconnected, retrying…');
   },
 });
 
-document.getElementById('newnick').addEventListener('click', async () => {
-  try { nick = await registerNick(); }
-  catch { toast('too many nickname requests, try again later', 'bad'); return; }
+audioContext.onstatechange = render;
+
+$key.addEventListener('pointerdown', event => {
+  $key.setPointerCapture(event.pointerId);
+  audioContext.resume();
+  setKey(true);
+});
+$key.addEventListener('pointerup', () => setKey(false));
+$key.addEventListener('pointercancel', () => setKey(false));
+$key.addEventListener('contextmenu', event => event.preventDefault());
+
+window.addEventListener('keydown', event => {
+  if (event.code !== 'Space' || event.repeat || event.target.closest('#menu')) return;
+  event.preventDefault();
+  audioContext.resume();
+  setKey(true);
+});
+window.addEventListener('keyup', event => {
+  if (event.code === 'Space') setKey(false);
+});
+// Alt-tabbing with the key held would otherwise leave the partner's tone on.
+window.addEventListener('blur', () => setKey(false));
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) setKey(false);
+});
+
+// The drawer backdrop is a pseudo-element of #menu itself, so only the panel
+// and its button count as "inside".
+document.addEventListener('pointerdown', event => {
+  if ($menu.open && !event.target.closest('#menu > div, #menu > summary')) $menu.open = false;
+});
+
+$vibrateSetting.hidden = !navigator.vibrate;
+bindSettings((setting, enabled) => {
+  if (!enabled) stopOutput(setting);
+  if (setting === 'human') reconnect();
+  render();
+});
+
+$newNick.addEventListener('click', async () => {
+  try {
+    nick = await registerNick();
+  } catch {
+    toast('too many nickname requests, try again later', 'bad');
+    return;
+  }
   showNick();
   reconnect();
 });
