@@ -55,10 +55,10 @@ func TestWebSocketEndToEnd(t *testing.T) {
 	read(alice, append([]byte{opPaired, flagBot}, "brave_otter_bbbb"...))
 	read(bob, append([]byte{opPaired, 0}, "sleepy_beaver_aaaa"...))
 
-	if err := alice.Write(ctx, websocket.MessageBinary, keyDown); err != nil {
+	if err := alice.Write(ctx, websocket.MessageBinary, []byte{opDot}); err != nil {
 		t.Fatal(err)
 	}
-	read(bob, keyDown)
+	read(bob, []byte{opDot})
 
 	bob.Close(websocket.StatusNormalClosure, "")
 	read(alice, []byte{opWaiting})

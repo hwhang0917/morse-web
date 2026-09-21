@@ -3,7 +3,7 @@ const NICK_COOKIE_MAX_AGE_S = 365 * 24 * 3600;
 // Mirrors nickRE on the server; a stale cookie that fails it would be rejected forever.
 const NICK_PATTERN = /^[a-z]{1,20}_[a-z]{1,20}_[a-z0-9]{4}$/;
 
-const OP = { KEY_UP: 0x00, KEY_DOWN: 0x01, WAITING: 0x10, PAIRED: 0x11, ONLINE: 0x20 };
+const OP = { DOT: 0x00, DASH: 0x01, LETTER_GAP: 0x02, WORD_GAP: 0x03, WAITING: 0x10, PAIRED: 0x11, ONLINE: 0x20 };
 const FLAG_BOT = 0x01;
 
 export function cookieNick() {
@@ -21,7 +21,7 @@ export async function registerNick() {
   return nick;
 }
 
-export function createSocket({ onKey, onWaiting, onPaired, onOnline, onClose }) {
+export function createSocket({ onSymbol, onWaiting, onPaired, onOnline, onClose }) {
   let socket;
   let retryTimer;
   let nick;
@@ -29,11 +29,11 @@ export function createSocket({ onKey, onWaiting, onPaired, onOnline, onClose }) 
 
   function handleFrame(frame) {
     switch (frame[0]) {
-      case OP.KEY_DOWN:
-        onKey(true);
-        break;
-      case OP.KEY_UP:
-        onKey(false);
+      case OP.DOT:
+      case OP.DASH:
+      case OP.LETTER_GAP:
+      case OP.WORD_GAP:
+        onSymbol(frame[0]);
         break;
       case OP.WAITING:
         onWaiting();
@@ -72,10 +72,10 @@ export function createSocket({ onKey, onWaiting, onPaired, onOnline, onClose }) 
     socket.close();
   }
 
-  function sendKey(down) {
+  function sendSymbol(op) {
     if (socket?.readyState !== WebSocket.OPEN) return;
-    socket.send(new Uint8Array([down ? OP.KEY_DOWN : OP.KEY_UP]));
+    socket.send(new Uint8Array([op]));
   }
 
-  return { connect, stop, sendKey };
+  return { connect, stop, sendSymbol };
 }

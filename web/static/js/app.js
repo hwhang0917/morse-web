@@ -1,10 +1,18 @@
 import { settings, bindSettings } from './settings.js';
 import { audioContext, localTone, remoteTone, vibrate } from './audio.js';
 import { cookieNick, registerNick, createSocket } from './socket.js';
-import { createDecoder } from './morse.js';
+import { SYMBOL, createDecoder } from './morse.js';
+import { createPlayer } from './player.js';
 
 const TOAST_MS = 3000;
 const TRANSLATION_CHARS = 40;
+// Sender-side classification. A tap is a dot; holding past DASH_MS is a dash.
+// Silence after a symbol ends the letter, then the word.
+const DASH_MS = 200;
+const LETTER_GAP_MS = 400;
+const WORD_GAP_MS = 1000;
+// Playback speed for what the partner sends: 80ms is 15 WPM.
+const PLAYBACK_UNIT_MS = 80;
 
 const $name = document.querySelector('#nick .name');
 const $tag = document.querySelector('#nick .tag');
@@ -24,7 +32,10 @@ let nick = '';
 let partner = '';
 let status = 'connecting…';
 let keyDown = false;
-let toastTimer;
+let keyDownAt = 0;
+let letterTimer = null;
+let wordTimer = null;
+let toastTimer = null;
 
 function toast(text, kind) {
   $toast.textContent = text;
@@ -37,6 +48,16 @@ const decoder = createDecoder({
   onChange({ text, letter }) {
     $translated.textContent = text.slice(-TRANSLATION_CHARS);
     $partial.textContent = letter;
+  },
+});
+
+// Incoming symbols drive the remote tone, vibration and flash through the
+// player so they keep proper rhythm; translation follows the playback.
+const player = createPlayer({
+  unitMs: PLAYBACK_UNIT_MS,
+  onSignal: receive,
+  onSymbol(symbol) {
+    if (settings.translate) decoder.push(symbol);
   },
 });
 
@@ -55,20 +76,35 @@ function showNick() {
 
 function receive(on) {
   remoteTone(on);
-  if (settings.translate) (on ? decoder.keyDown : decoder.keyUp)();
   if (settings.vibrate) vibrate(on);
   if (settings.flash) document.body.classList.toggle('rx', on);
 }
 
+function cancelGapTimers() {
+  clearTimeout(letterTimer);
+  clearTimeout(wordTimer);
+}
+
+// Only transitions count, which guards multi-touch and the keyboard path.
 function setKey(isDown) {
   if (isDown === keyDown) return;
   keyDown = isDown;
   document.body.classList.toggle('tx', keyDown);
   localTone(keyDown);
-  socket.sendKey(keyDown);
+
+  if (keyDown) {
+    cancelGapTimers();
+    keyDownAt = performance.now();
+    return;
+  }
+  const held = performance.now() - keyDownAt;
+  socket.sendSymbol(held >= DASH_MS ? SYMBOL.DASH : SYMBOL.DOT);
+  letterTimer = setTimeout(() => socket.sendSymbol(SYMBOL.LETTER_GAP), LETTER_GAP_MS);
+  wordTimer = setTimeout(() => socket.sendSymbol(SYMBOL.WORD_GAP), WORD_GAP_MS);
 }
 
 function clearPartner(newStatus) {
+  player.clear();
   receive(false);
   decoder.reset();
   partner = '';
@@ -82,6 +118,7 @@ function socketParams() {
 
 function reconnect() {
   socket.stop();
+  cancelGapTimers();
   clearPartner('connecting…');
   socket.connect(nick, socketParams());
 }
@@ -97,7 +134,7 @@ function stopOutput(setting) {
 }
 
 const socket = createSocket({
-  onKey: receive,
+  onSymbol: player.enqueue,
   onWaiting() {
     if (partner) toast(`${partner} disconnected`, 'bad');
     clearPartner('waiting for a partner…');
@@ -115,6 +152,7 @@ const socket = createSocket({
   onClose() {
     $online.textContent = '';
     setKey(false);
+    cancelGapTimers();
     clearPartner('disconnected, retrying…');
   },
 });
@@ -139,7 +177,7 @@ window.addEventListener('keydown', event => {
 window.addEventListener('keyup', event => {
   if (event.code === 'Space') setKey(false);
 });
-// Alt-tabbing with the key held would otherwise leave the partner's tone on.
+// Alt-tabbing with the key held would otherwise leave the tone on.
 window.addEventListener('blur', () => setKey(false));
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) setKey(false);

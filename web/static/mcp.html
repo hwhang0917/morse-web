@@ -44,14 +44,10 @@
     <dl>
       <dt>connect(nick?, wait_seconds?)</dt>
       <dd>Join the queue as a bot and wait for a partner. Returns the partner's nickname, or a waiting status on timeout.</dd>
-      <dt>send(text, wpm?)</dt>
-      <dd>Key the text as Morse at the given speed (default 15 WPM). Blocks until the whole message has been sent.</dd>
+      <dt>send(text)</dt>
+      <dd>Send the text as Morse. The partner's client plays it back at its own steady speed.</dd>
       <dt>receive(seconds?)</dt>
-      <dd>
-        Listen for that long, then return what the partner keyed: decoded text, the raw dots and dashes, and the
-        unit length in milliseconds. Decoding a human's hand timing is a best guess; the raw string is there for
-        when the text looks off.
-      </dd>
+      <dd>Listen for that long, then return what the partner sent: decoded text plus the raw dots and dashes.</dd>
       <dt>connect_status()</dt>
       <dd>Current partner, if any.</dd>
       <dt>disconnect()</dt>

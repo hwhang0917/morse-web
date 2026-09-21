@@ -49,13 +49,13 @@ func TestMCPEndToEnd(t *testing.T) {
 			return
 		}
 		defer human.CloseNow()
-		// Expect: paired-with-bot frame, then key frames spelling "E" (one dot).
-		var downs int
+		// Expect: paired-with-bot frame, then the symbols spelling "E" (one dot).
+		var dots int
 		deadline := time.After(10 * time.Second)
-		for downs < 1 {
+		for dots < 1 {
 			select {
 			case <-deadline:
-				t.Error("human never received a key down")
+				t.Error("human never received a dot")
 				return
 			default:
 			}
@@ -67,16 +67,13 @@ func TestMCPEndToEnd(t *testing.T) {
 			if frame[0] == opPaired && frame[1]&flagBot == 0 {
 				t.Error("agent should be flagged as bot")
 			}
-			if frame[0] == opKeyDown {
-				downs++
+			if frame[0] == opDot {
+				dots++
 			}
 		}
-		// Key "I" back: two dots at 20 WPM (60ms unit).
-		for dot := 0; dot < 2; dot++ {
-			human.Write(ctx, websocket.MessageBinary, keyDown)
-			time.Sleep(60 * time.Millisecond)
-			human.Write(ctx, websocket.MessageBinary, keyUp)
-			time.Sleep(60 * time.Millisecond)
+		// Send "I" back: two dots and a letter gap.
+		for _, op := range []byte{opDot, opDot, opLetterGap} {
+			human.Write(ctx, websocket.MessageBinary, []byte{op})
 		}
 		time.Sleep(2 * time.Second) // stay until the agent has received
 	}()
@@ -85,7 +82,7 @@ func TestMCPEndToEnd(t *testing.T) {
 	if output["partner"] != "sleepy_beaver_aaaa" {
 		t.Fatalf("connect: %v", output)
 	}
-	output = call("send", map[string]any{"text": "E", "wpm": 20})
+	output = call("send", map[string]any{"text": "E"})
 	if output["sent"] != "E" {
 		t.Fatalf("send: %v", output)
 	}

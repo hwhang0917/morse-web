@@ -10,20 +10,22 @@ import (
 )
 
 // Wire protocol: every frame is binary and the first byte is the opcode.
+// Symbols are classified by the sender, so network jitter cannot turn a dot
+// into a dash or split a letter on the way over.
 const (
-	opKeyUp   = 0x00 // both directions
-	opKeyDown = 0x01 // both directions
-	opWaiting = 0x10 // server -> client; also sent when the partner leaves
-	opPaired  = 0x11 // server -> client, then a flags byte, then the partner nick
-	opOnline  = 0x20 // server -> client, then a big-endian uint16 client count
+	opDot       = 0x00 // both directions
+	opDash      = 0x01 // both directions
+	opLetterGap = 0x02 // both directions: the letter is complete
+	opWordGap   = 0x03 // both directions: the word is complete
+	opWaiting   = 0x10 // server -> client; also sent when the partner leaves
+	opPaired    = 0x11 // server -> client, then a flags byte, then the partner nick
+	opOnline    = 0x20 // server -> client, then a big-endian uint16 client count
 )
 
 const flagBot = 0x01 // opPaired flags byte: the partner declared itself a bot
 
-var (
-	keyUp   = []byte{opKeyUp}
-	keyDown = []byte{opKeyDown}
-)
+// One shared frame per symbol so relaying allocates nothing.
+var symbolFrames = [...][]byte{{opDot}, {opDash}, {opLetterGap}, {opWordGap}}
 
 const (
 	sendBuf      = 16
@@ -52,15 +54,15 @@ func (c *client) push(frame []byte) {
 	}
 }
 
-type keyMsg struct {
+type symbolMsg struct {
 	from *client
-	down bool
+	op   byte
 }
 
 type hub struct {
 	register   chan *client
 	unregister chan *client
-	relay      chan keyMsg
+	relay      chan symbolMsg
 	waiting    []*client
 	clients    map[*client]struct{}
 	nWaiting   atomic.Int32
@@ -71,7 +73,7 @@ func newHub() *hub {
 	return &hub{
 		register:   make(chan *client),
 		unregister: make(chan *client),
-		relay:      make(chan keyMsg),
+		relay:      make(chan symbolMsg),
 		clients:    map[*client]struct{}{},
 	}
 }
@@ -100,14 +102,8 @@ func (h *hub) run() {
 			h.broadcastOnline()
 
 		case msg := <-h.relay:
-			partner := msg.from.partner
-			if partner == nil {
-				continue
-			}
-			if msg.down {
-				partner.push(keyDown)
-			} else {
-				partner.push(keyUp)
+			if partner := msg.from.partner; partner != nil {
+				partner.push(symbolFrames[msg.op])
 			}
 		}
 	}
@@ -170,7 +166,7 @@ func pairedFrame(partner *client) []byte {
 	return append([]byte{opPaired, flags}, partner.nick...)
 }
 
-// readPump forwards key frames to the hub until the socket dies. Reading
+// readPump forwards symbol frames to the hub until the socket dies. Reading
 // continuously is also what lets the library answer pings and close frames.
 func (c *client) readPump(h *hub) {
 	for {
@@ -178,11 +174,11 @@ func (c *client) readPump(h *hub) {
 		if err != nil {
 			return
 		}
-		if kind != websocket.MessageBinary || len(frame) != 1 || frame[0] > opKeyDown {
-			c.conn.Close(websocket.StatusUnsupportedData, "expected 1-byte key frame")
+		if kind != websocket.MessageBinary || len(frame) != 1 || frame[0] > opWordGap {
+			c.conn.Close(websocket.StatusUnsupportedData, "expected 1-byte symbol frame")
 			return
 		}
-		h.relay <- keyMsg{from: c, down: frame[0] == opKeyDown}
+		h.relay <- symbolMsg{from: c, op: frame[0]}
 	}
 }
 

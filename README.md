@@ -19,7 +19,7 @@ docker compose up -d        # pulls ghcr.io/hwhang0917/morse-web:latest
 ## How it works
 
 - Single Go binary using [coder/websocket](https://github.com/coder/websocket) with a hub/pump architecture: one hub goroutine keeps a FIFO queue and pairs sockets as they arrive. If your partner leaves you go back into the queue.
-- Every WebSocket frame is binary and 1 byte for key down/up; the partner hears the tone for exactly as long as you hold the key.
+- Every WebSocket frame is one binary byte: dot, dash, end of letter, or end of word. The sender classifies its own key presses, so network jitter cannot change what the partner hears, and the partner's client plays the symbols back at a steady speed.
 - The web UI is an embedded HTML page plus three small ES modules (`web/static/js/{audio,settings,socket}.js`): a big key button, Web Audio tones, optional vibration and screen flash, settings in the ☰ menu.
 
 ## Endpoints

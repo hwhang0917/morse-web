@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -19,9 +18,6 @@ const (
 	mcpSendBuf        = 256
 	mcpDefaultWait    = 30 * time.Second
 	mcpMaxWait        = 120 * time.Second
-	mcpDefaultWPM     = 15
-	mcpMinWPM         = 5
-	mcpMaxWPM         = 40
 	mcpDefaultListen  = 5 * time.Second
 	mcpMaxListen      = 60 * time.Second
 	directIPKey       = "direct" // gauge bucket when no proxy header is present
@@ -41,7 +37,7 @@ type botSession struct {
 	ipKey     string
 
 	mu         sync.Mutex
-	keys       []keyEvent // partner key events since the last receive
+	symbols    []byte // partner symbols since the last receive
 	partner    string
 	partnerBot bool
 
@@ -70,9 +66,9 @@ func (mgr *mcpManager) session(req *mcp.CallToolRequest) (*botSession, error) {
 func (session *botSession) drain() {
 	for frame := range session.hubClient.send {
 		switch frame[0] {
-		case opKeyDown, opKeyUp:
+		case opDot, opDash, opLetterGap, opWordGap:
 			session.mu.Lock()
-			session.keys = append(session.keys, keyEvent{down: frame[0] == opKeyDown, at: time.Now()})
+			session.symbols = append(session.symbols, frame[0])
 			session.mu.Unlock()
 		case opPaired:
 			session.mu.Lock()
@@ -187,13 +183,12 @@ func (mgr *mcpManager) connect(ctx context.Context, req *mcp.CallToolRequest, ar
 }
 
 type sendIn struct {
-	Text string `json:"text" jsonschema:"text to key as Morse; letters, digits and . , ? / = are sent, other characters skipped"`
-	WPM  int    `json:"wpm,omitempty" jsonschema:"speed in words per minute (default 15, range 5-40)"`
+	Text string `json:"text" jsonschema:"text to send as Morse; letters, digits and . , ? / = are sent, other characters skipped"`
 }
 
 type sendOut struct {
-	Sent    string  `json:"sent"`
-	Seconds float64 `json:"seconds"`
+	Sent    string `json:"sent"`
+	Symbols int    `json:"symbols"`
 }
 
 func (mgr *mcpManager) send(ctx context.Context, req *mcp.CallToolRequest, args sendIn) (*mcp.CallToolResult, sendOut, error) {
@@ -204,33 +199,20 @@ func (mgr *mcpManager) send(ctx context.Context, req *mcp.CallToolRequest, args 
 	if !session.hasPartner() {
 		return nil, sendOut{}, errNoPartner
 	}
-	wpm := args.WPM
-	if wpm == 0 {
-		wpm = mcpDefaultWPM
-	}
-	if wpm < mcpMinWPM || wpm > mcpMaxWPM {
-		return nil, sendOut{}, fmt.Errorf("wpm must be between %d and %d", mcpMinWPM, mcpMaxWPM)
-	}
-
-	start := time.Now()
-	for _, step := range keyPlan(args.Text, wpm) {
+	symbols := encodeSymbols(args.Text)
+	for _, op := range symbols {
 		if !session.hasPartner() {
 			return nil, sendOut{}, errPartnerLeft
 		}
-		mgr.hub.relay <- keyMsg{from: session.hubClient, down: step.down}
-		if step.dur == 0 {
-			continue
-		}
 		select {
-		case <-time.After(step.dur):
+		case mgr.hub.relay <- symbolMsg{from: session.hubClient, op: op}:
 		case <-ctx.Done():
-			mgr.hub.relay <- keyMsg{from: session.hubClient, down: false}
 			return nil, sendOut{}, ctx.Err()
 		case <-session.hubClient.ctx.Done():
 			return nil, sendOut{}, errDisconnected
 		}
 	}
-	return nil, sendOut{Sent: args.Text, Seconds: time.Since(start).Seconds()}, nil
+	return nil, sendOut{Sent: args.Text, Symbols: len(symbols)}, nil
 }
 
 type receiveIn struct {
@@ -240,7 +222,6 @@ type receiveIn struct {
 type receiveOut struct {
 	Text    string `json:"text"`
 	Raw     string `json:"raw"`
-	UnitMs  int    `json:"unit_ms"`
 	Partner string `json:"partner"`
 }
 
@@ -256,13 +237,13 @@ func (mgr *mcpManager) receive(ctx context.Context, req *mcp.CallToolRequest, ar
 	}
 
 	session.mu.Lock()
-	events := session.keys
-	session.keys = nil
+	symbols := session.symbols
+	session.symbols = nil
 	partner := session.partner
 	session.mu.Unlock()
 
-	text, raw, unit := decodeMorse(events)
-	return nil, receiveOut{Text: text, Raw: raw, UnitMs: int(unit / time.Millisecond), Partner: partner}, nil
+	text, raw := decodeSymbols(symbols)
+	return nil, receiveOut{Text: text, Raw: raw, Partner: partner}, nil
 }
 
 type statusOut struct {
@@ -296,8 +277,8 @@ func newMCPHandler(matchmaker *hub, gauge *connGauge) http.Handler {
 			"The person on the other end sees you as a bot.",
 	})
 	mcp.AddTool(server, &mcp.Tool{Name: "connect", Description: "Join the queue as a bot and wait to be paired with a partner."}, mgr.connect)
-	mcp.AddTool(server, &mcp.Tool{Name: "send", Description: "Key text as Morse to your partner at the given speed. Blocks for the duration of the message."}, mgr.send)
-	mcp.AddTool(server, &mcp.Tool{Name: "receive", Description: "Listen for the given number of seconds and return what the partner keyed, decoded to text plus the raw dots and dashes."}, mgr.receive)
+	mcp.AddTool(server, &mcp.Tool{Name: "send", Description: "Send text as Morse to your partner. Their client plays it back at its own speed."}, mgr.send)
+	mcp.AddTool(server, &mcp.Tool{Name: "receive", Description: "Listen for the given number of seconds and return what the partner sent, decoded to text plus the raw dots and dashes."}, mgr.receive)
 	mcp.AddTool(server, &mcp.Tool{Name: "connect_status", Description: "Report the current partner, if any."}, mgr.status)
 	mcp.AddTool(server, &mcp.Tool{Name: "disconnect", Description: "Leave the queue or the current conversation."}, mgr.disconnect)
 	return mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server },

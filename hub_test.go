@@ -127,7 +127,7 @@ func TestHubBothLeave(t *testing.T) {
 	expectCounts(t, matchmaker, 1, 0)
 }
 
-func TestHubRelaysKeyToPartner(t *testing.T) {
+func TestHubRelaysSymbolsToPartner(t *testing.T) {
 	matchmaker := newHub()
 	go matchmaker.run()
 
@@ -138,10 +138,10 @@ func TestHubRelaysKeyToPartner(t *testing.T) {
 	expect(t, alice, paired("B"))
 	expect(t, bob, paired("A"))
 
-	matchmaker.relay <- keyMsg{from: alice, down: true}
-	expect(t, bob, keyDown)
-	matchmaker.relay <- keyMsg{from: bob, down: false}
-	expect(t, alice, keyUp)
+	matchmaker.relay <- symbolMsg{from: alice, op: opDash}
+	expect(t, bob, []byte{opDash})
+	matchmaker.relay <- symbolMsg{from: bob, op: opLetterGap}
+	expect(t, alice, []byte{opLetterGap})
 }
 
 func TestHubBroadcastsOnlineCount(t *testing.T) {
